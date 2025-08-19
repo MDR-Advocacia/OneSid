@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Processos Jurídicos</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>Consulta de Subsídios</h1>
+        <p>Insira o número do processo abaixo e clique em "Adicionar" para incluí-lo na lista de consulta.</p>
+
+        <div class="input-area">
+            <input type="text" id="processoInput" placeholder="Ex: 0000000-00.0000.0.00.0000">
+            <button id="addBtn">Adicionar</button>
+        </div>
+
+        <div class="list-area">
+            <h2>Processos para Consultar</h2>
+            <ul id="processoList">
+                </ul>
+        </div>
+        
+        <div class="actions-area">
+            <button id="copyBtn">Copiar Lista</button>
+            <button id="downloadBtn">Baixar Lista (.txt)</button>
+            <button id="clearBtn">Limpar Tudo</button>
+        </div>
+
+        <div id="feedback" class="feedback-message"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
