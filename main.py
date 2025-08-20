@@ -20,8 +20,13 @@ def run():
             for num_processo in lista_processos:
                 processo.navegar_para_processo(portal_page, num_processo, config.URL_BUSCA_PROCESSO)
                 
-                # Chama a função que agora imita o vídeo perfeitamente
-                processo.acessar_detalhes(portal_page)
+                # Etapa 1: Acessar detalhes (já funcionando)
+                processo.acessar_detalhes(portal_page, num_processo)
+                
+                # --- LINHA MODIFICADA ---
+                # Etapa 2: Clicar em subsídios, passando o número do processo para confirmação
+                processo.clicar_menu_subsidios(portal_page, num_processo)
+                # -------------------------
                 
             print("\n✅ TODOS OS PROCESSOS FORAM CONSULTADOS.")
 
