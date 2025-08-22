@@ -35,11 +35,14 @@ def iniciar_e_conectar(p: Playwright) -> Browser:
 
 def fechar_navegador():
     """
-    Encerra o processo do navegador de forma limpa.
+    Encerra o processo do navegador de forma limpa e automática.
     """
     global browser_process
     if browser_process:
-        input("\n... Pressione Enter para fechar o navegador e encerrar o script ...")
+        # A LINHA ABAIXO FOI REMOVIDA PARA TORNAR O PROCESSO 100% AUTOMÁTICO
+        # input("\n... Pressione Enter para fechar o navegador e encerrar o script ...")
+        
         # O comando TASKKILL é específico para Windows.
+        print("\n🏁 Fechando o navegador automaticamente...")
         subprocess.run(f"TASKKILL /F /PID {browser_process.pid} /T", shell=True, capture_output=True)
-        print("🏁 Navegador fechado. Fim da execução.")
+        print("✔️ Navegador fechado. Fim da execução do RPA.")
