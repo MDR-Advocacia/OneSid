@@ -1,18 +1,15 @@
-import json
 from playwright.sync_api import sync_playwright
 import config
 import navegador
 import portal_bb
 import processo
+from bd import database # Importamos o database para usar a função de atualização
 
-# A lógica principal agora é uma função que aceita uma lista de processos
-def executar_rpa(lista_processos: list) -> list:
+def executar_rpa(lista_processos: list):
     """
-    Função principal que orquestra a execução do robô.
-    Recebe uma lista de números de processo e retorna os dados extraídos.
+    Orquestra a execução do robô para uma lista de processos,
+    atualizando o banco de dados com os resultados de cada um.
     """
-    todos_os_subsidios = []
-
     try:
         with sync_playwright() as p:
             browser = navegador.iniciar_e_conectar(p)
@@ -22,39 +19,38 @@ def executar_rpa(lista_processos: list) -> list:
             
             for num_processo in lista_processos:
                 print(f"\n--- INICIANDO CONSULTA PARA O PROCESSO: {num_processo} ---")
-                processo.navegar_para_processo(portal_page, num_processo, config.URL_BUSCA_PROCESSO)
-                processo.acessar_detalhes(portal_page, num_processo)
-                processo.clicar_menu_subsidios(portal_page, num_processo)
-                
-                dados_do_processo = processo.extrair_dados_subsidios(portal_page)
-                
-                if dados_do_processo:
-                    todos_os_subsidios.append({
-                        "processo": num_processo,
-                        "subsidios": dados_do_processo
-                    })
-                
-            print("\n✅ TODOS OS PROCESSOS FORAM CONSULTADOS E DADOS EXTRAÍDOS.")
-            return todos_os_subsidios
+                try:
+                    processo.navegar_para_processo(portal_page, num_processo, config.URL_BUSCA_PROCESSO)
+                    processo.acessar_detalhes(portal_page, num_processo)
+                    processo.clicar_menu_subsidios(portal_page, num_processo)
+                    
+                    # Extrai os dados dos subsídios para o processo atual
+                    dados_subsidios_do_processo = processo.extrair_dados_subsidios(portal_page)
+                    
+                    # Se encontrou dados, atualiza o status no banco de dados
+                    if dados_subsidios_do_processo:
+                        database.atualizar_status_processo(num_processo, dados_subsidios_do_processo)
+                    else:
+                        print(f"AVISO: Nenhum subsídio encontrado para o processo {num_processo}. Status não atualizado.")
+
+                except Exception as e:
+                    print(f"!!!!!!!!!!!!!! ERRO AO PROCESSAR O PROCESSO {num_processo} !!!!!!!!!!!!!!")
+                    print(f"Detalhes do erro: {e}")
+                    print("Continuando para o próximo processo...")
+                    continue # Pula para o próximo item da lista em caso de erro
+
+            print("\n✅ CONSULTA RPA FINALIZADA PARA TODOS OS PROCESSOS SOLICITADOS.")
 
     except Exception as e:
-        print("\n========================= ERRO =========================")
-        print(f"Ocorreu uma falha na automação: {e}")
-        print("========================================================")
-        # Em caso de erro, retorna a lista com o que foi coletado até o momento
-        return todos_os_subsidios
+        print("\n========================= ERRO GERAL NO RPA =========================")
+        print(f"Ocorreu uma falha crítica na automação: {e}")
+        print("=====================================================================")
     finally:
-        # A parte de fechar o navegador será controlada pelo servidor agora
         navegador.fechar_navegador()
 
-# A parte abaixo só será executada se você rodar `python main.py` diretamente
-# Ótimo para testes!
+# A parte abaixo pode ser usada para testes manuais, se necessário
 if __name__ == "__main__":
-    processos_para_teste = ["0803535-15.2025.8.20.5103"]
-    resultado = executar_rpa(processos_para_teste)
-    
-    if resultado:
-        nome_arquivo = "subsidios_teste.json"
-        with open(nome_arquivo, 'w', encoding='utf-8') as f:
-            json.dump(resultado, f, ensure_ascii=False, indent=4)
-        print(f"\n💾 Dados de teste salvos com sucesso no arquivo: {nome_arquivo}")
+    # Para testar, você pode chamar as funções do banco e do rpa diretamente aqui
+    # Ex: database.inicializar_banco()
+    # Ex: executar_rpa(["0032782-96.2023.8.03.0001"])
+    print("Este script agora é projetado para ser chamado pelo server.py.")
