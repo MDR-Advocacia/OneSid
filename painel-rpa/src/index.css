@@ -11,3 +11,17 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+
+.button-group {
+    display: flex;
+    gap: 15px; /* Espaço entre os botões */
+}
+
+.secondary-button {
+    background-color: #6c757d; /* Cinza */
+}
+
+.secondary-button:hover {
+    background-color: #5a6268;
+}

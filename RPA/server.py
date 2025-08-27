@@ -12,40 +12,50 @@ sys.path.append(caminho_raiz_do_projeto)
 import main
 from bd import database
 
-# Garante que o banco de dados e suas tabelas existam ao iniciar
 database.inicializar_banco()
 
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/submit-processos', methods=['POST'])
-def submit_processos_endpoint():
+@app.route('/add-and-run', methods=['POST'])
+def add_and_run_endpoint():
     """
-    Recebe novos processos do painel, adiciona ao monitoramento
-    e dispara a execução do RPA apenas para os que precisam.
+    Recebe novos processos, adiciona ao monitoramento e roda o RPA apenas para eles.
     """
     try:
         data = request.get_json()
-        if not data or 'processos' not in data:
-            return jsonify({"error": "A lista de 'processos' não foi encontrada."}), 400
-            
         numeros_processo = data['processos']
-        print(f"API recebeu submissão para os processos: {numeros_processo}")
+        print(f"API: Adicionando e rodando para: {numeros_processo}")
 
-        # 1. Adiciona os novos processos à tabela de monitoramento
         database.adicionar_processos_para_monitorar(numeros_processo)
-
-        # 2. Executa o RPA para os processos submetidos
-        # (Em uma versão futura, poderíamos rodar apenas os que estão 'Em Monitoramento')
         main.executar_rpa(numeros_processo)
 
-        # 3. Retorna os dados atualizados do painel
         dados_painel = database.buscar_painel_dados()
         return jsonify(dados_painel)
-
     except Exception as e:
-        print(f"Ocorreu um erro no endpoint /submit-processos: {e}")
-        return jsonify({"error": f"Ocorreu um erro interno no servidor: {e}"}), 500
+        return jsonify({"error": f"Erro: {e}"}), 500
+
+@app.route('/run-monitoring', methods=['POST'])
+def run_monitoring_endpoint():
+    """
+    Busca todos os processos 'Em Monitoramento' no banco e roda o RPA para eles.
+    """
+    try:
+        print("API: Iniciando RPA para processos em monitoramento...")
+        processos_para_rodar = database.buscar_processos_em_monitoramento()
+        
+        if not processos_para_rodar:
+            print("API: Nenhum processo encontrado para monitorar.")
+            # Retorna os dados do painel mesmo que não tenha rodado nada
+            dados_painel = database.buscar_painel_dados()
+            return jsonify(dados_painel)
+
+        main.executar_rpa(processos_para_rodar)
+
+        dados_painel = database.buscar_painel_dados()
+        return jsonify(dados_painel)
+    except Exception as e:
+        return jsonify({"error": f"Erro: {e}"}), 500
 
 @app.route('/arquivar-processo', methods=['POST'])
 def arquivar_processo_endpoint():
@@ -56,9 +66,8 @@ def arquivar_processo_endpoint():
         data = request.get_json()
         numero_processo = data['numero_processo']
         database.marcar_como_arquivado(numero_processo)
-        return jsonify({"success": True, "message": f"Processo {numero_processo} arquivado."})
+        return jsonify({"success": True})
     except Exception as e:
-        print(f"Ocorreu um erro ao arquivar o processo: {e}")
         return jsonify({"error": f"Erro ao arquivar: {e}"}), 500
 
 @app.route('/painel', methods=['GET'])
