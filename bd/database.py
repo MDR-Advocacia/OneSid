@@ -5,22 +5,33 @@ import re
 DB_NAME = 'rpa_dados.db'
 
 def _limpar_numero(numero_processo_bruto: str) -> str:
-    """Remove todos os caracteres não numéricos de uma string de número de processo."""
+    """Remove todos os caracteres não numéricos de uma string."""
     return re.sub(r'\D', '', numero_processo_bruto)
 
 def inicializar_banco():
-    """Cria ou atualiza as tabelas do banco de dados para o novo modelo."""
+    """Cria ou atualiza as tabelas do banco, adicionando a nova coluna."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero_processo TEXT UNIQUE,
             status_geral TEXT,
             data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            data_ultima_atualizacao TIMESTAMP
+            data_ultima_atualizacao TIMESTAMP,
+            responsavel_principal TEXT 
         )
     ''')
+    
+    # Garante que a coluna exista se o banco já foi criado antes
+    try:
+        cursor.execute("ALTER TABLE processos ADD COLUMN responsavel_principal TEXT")
+        print("✔️ Coluna 'responsavel_principal' adicionada à tabela.")
+    except sqlite3.OperationalError:
+        # A coluna já existe, o que é esperado nas execuções normais
+        pass
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS subsidios_atuais (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,24 +42,39 @@ def inicializar_banco():
             UNIQUE(numero_processo, item)
         )
     ''')
+    
     conn.commit()
     conn.close()
     print("✔️ Banco de dados (re)inicializado com a estrutura de estado atual.")
 
-def adicionar_processos_para_monitorar(numeros_processo: list):
-    """Adiciona novos processos à tabela de monitoramento, sempre no formato limpo."""
+def adicionar_processos_para_monitorar(processos_com_responsavel: list):
+    """
+    Adiciona ou atualiza processos na tabela de monitoramento.
+    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     agora = datetime.datetime.now()
-    for numero in numeros_processo:
-        numero_limpo = _limpar_numero(numero)
+    
+    for item in processos_com_responsavel:
+        numero_limpo = _limpar_numero(item['numero'])
+        responsavel = item['responsavel']
+        
+        # Lógica de "Atualizar ou Inserir" (UPSERT)
         cursor.execute(
-            "INSERT OR IGNORE INTO processos (numero_processo, status_geral, data_ultima_atualizacao) VALUES (?, ?, ?)",
-            (numero_limpo, 'Em Monitoramento', agora)
+            """
+            INSERT INTO processos (numero_processo, status_geral, data_ultima_atualizacao, responsavel_principal)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(numero_processo) DO UPDATE SET
+                responsavel_principal = excluded.responsavel_principal,
+                status_geral = 'Em Monitoramento',
+                data_ultima_atualizacao = excluded.data_ultima_atualizacao;
+            """,
+            (numero_limpo, 'Em Monitoramento', agora, responsavel)
         )
+    
     conn.commit()
     conn.close()
-    print(f"✔️ Processos adicionados/verificados na tabela de monitoramento.")
+    print(f"✔️ Processos adicionados/atualizados na tabela de monitoramento.")
 
 def atualizar_status_processo(numero_processo: str, lista_subsidios: list):
     """Atualiza o status de um processo e o estado atual de seus subsídios."""
@@ -95,14 +121,18 @@ def marcar_como_arquivado(numero_processo: str):
     print(f"✔️ Processo {numero_processo_limpo} movido para o histórico (Arquivado).")
 
 def buscar_painel_dados():
-    """Busca os processos ativos e os detalhes dos seus subsídios atuais."""
+    """
+    Busca os processos ativos, incluindo o responsável, e os detalhes dos subsídios.
+    """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    
     cursor.execute(
-        "SELECT id, numero_processo, status_geral, data_ultima_atualizacao FROM processos WHERE status_geral != 'Arquivado' ORDER BY data_ultima_atualizacao DESC"
+        "SELECT id, numero_processo, responsavel_principal, status_geral, data_ultima_atualizacao FROM processos WHERE status_geral != 'Arquivado' ORDER BY data_ultima_atualizacao DESC"
     )
     dados_painel = [dict(row) for row in cursor.fetchall()]
+    
     for processo in dados_painel:
         cursor.execute(
             "SELECT item, status FROM subsidios_atuais WHERE numero_processo = ? ORDER BY id",
@@ -110,6 +140,7 @@ def buscar_painel_dados():
         )
         subsidios_detalhes = [dict(row) for row in cursor.fetchall()]
         processo['subsidios'] = subsidios_detalhes
+    
     conn.close()
     return dados_painel
 
@@ -126,12 +157,15 @@ def buscar_processos_em_monitoramento() -> list:
     return processos
 
 def buscar_historico_arquivado():
-    """Busca todos os processos arquivados para a tela de histórico."""
+    """
+    Busca todos os processos arquivados, incluindo o responsável.
+    """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    
     cursor.execute(
-        "SELECT id, numero_processo, status_geral, data_ultima_atualizacao FROM processos WHERE status_geral = 'Arquivado' ORDER BY data_ultima_atualizacao DESC"
+        "SELECT id, numero_processo, responsavel_principal, data_ultima_atualizacao FROM processos WHERE status_geral = 'Arquivado' ORDER BY data_ultima_atualizacao DESC"
     )
     historico = [dict(row) for row in cursor.fetchall()]
     conn.close()

@@ -56,11 +56,24 @@ function App() {
   }, []);
 
   const handleAddAndRun = async () => {
-    const numbers = processInput.split('\n').filter(num => num.trim() !== '');
-    if (numbers.length === 0) {
-        setMessage('Por favor, insira ao menos um processo.');
+    const lines = processInput.split('\n').filter(line => line.trim() !== '');
+    if (lines.length === 0) {
+        setMessage('Por favor, insira os dados no formato correto.');
         return;
-    };
+    }
+
+    const processosParaEnviar = lines.map(line => {
+        const parts = line.split('\t'); // Divide a linha pelo caractere TAB
+        if (parts.length >= 2) {
+            return { responsavel: parts[0].trim(), numero: parts[1].trim() };
+        }
+        return null;
+    }).filter(Boolean);
+
+    if (processosParaEnviar.length === 0) {
+        setMessage('Nenhum processo válido encontrado. Use o formato: Responsável [TAB] Processo.');
+        return;
+    }
 
     setIsLoading(true);
     setMessage('Adicionando e consultando novos processos...');
@@ -69,12 +82,11 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/add-and-run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processos: numbers }),
+        body: JSON.stringify({ processos: processosParaEnviar }),
       });
       if (!response.ok) throw new Error('Falha ao submeter novos processos.');
       
-      const updatedPanelData = await response.json();
-      setPanelList(updatedPanelData);
+      await fetchData();
       setMessage('Novos processos consultados com sucesso!');
       setProcessInput('');
     } catch (error) {
@@ -87,13 +99,10 @@ function App() {
   const handleRunMonitoring = async () => {
     setIsLoading(true);
     setMessage('Iniciando monitoramento dos processos pendentes...');
-
     try {
         const response = await fetch(`${API_BASE_URL}/run-monitoring`, { method: 'POST' });
         if (!response.ok) throw new Error('Falha ao rodar monitoramento.');
-
-        const updatedPanelData = await response.json();
-        setPanelList(updatedPanelData);
+        await fetchData();
         setMessage('Monitoramento finalizado com sucesso!');
     } catch (error) {
         setMessage('Erro durante o monitoramento.');
@@ -129,9 +138,10 @@ function App() {
         <main className="panel-container">
           <div className="input-section">
             <h2>Submeter Novos Processos</h2>
+            <p>Copie e cole da sua planilha (Responsável [TAB] Processo).</p>
             <textarea
               rows="8"
-              placeholder="Cole os números dos processos aqui..."
+              placeholder="Arthur Augusto Alves de Almeida	6031308-17.2025.8.03.0001"
               value={processInput}
               onChange={(e) => setProcessInput(e.target.value)}
               disabled={isLoading}
@@ -154,6 +164,7 @@ function App() {
                 <thead>
                   <tr>
                     <th>ID</th>
+                    <th>Responsável Principal</th>
                     <th>Número do Processo</th>
                     <th>Status</th>
                     <th>Última Verificação</th>
@@ -164,10 +175,11 @@ function App() {
                   {panelList.map((proc) => (
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
+                      <td>{proc.responsavel_principal}</td>
                       <td>
-                        <a href="#" onClick={(e) => { e.preventDefault(); setModalProcess(proc); }}>
+                        <button className="link-button" onClick={() => setModalProcess(proc)}>
                           {proc.numero_processo}
-                        </a>
+                        </button>
                       </td>
                       <td>
                         <span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>
@@ -196,6 +208,7 @@ function App() {
                 <thead>
                   <tr>
                     <th>ID</th>
+                    <th>Responsável Principal</th>
                     <th>Número do Processo</th>
                     <th>Data de Arquivamento</th>
                   </tr>
@@ -204,6 +217,7 @@ function App() {
                   {historyList.map((proc) => (
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
+                      <td>{proc.responsavel_principal}</td>
                       <td>{proc.numero_processo}</td>
                       <td>{new Date(proc.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
                     </tr>

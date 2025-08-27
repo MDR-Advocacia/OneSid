@@ -3,11 +3,9 @@ import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# --- CORREÇÃO DO CAMINHO DE IMPORTAÇÃO ---
 caminho_atual = os.path.dirname(os.path.abspath(__file__))
 caminho_raiz_do_projeto = os.path.dirname(caminho_atual)
 sys.path.append(caminho_raiz_do_projeto)
-# -----------------------------------------
 
 import main
 from bd import database
@@ -20,14 +18,19 @@ CORS(app)
 @app.route('/add-and-run', methods=['POST'])
 def add_and_run_endpoint():
     """
-    Recebe novos processos, adiciona ao monitoramento e roda o RPA apenas para eles.
+    Recebe processos com responsáveis, adiciona/atualiza no banco
+    e roda o RPA para eles.
     """
     try:
         data = request.get_json()
-        numeros_processo = data['processos']
-        print(f"API: Adicionando e rodando para: {numeros_processo}")
+        processos_com_responsavel = data['processos']
+        print(f"API: Adicionando e rodando para: {processos_com_responsavel}")
 
-        database.adicionar_processos_para_monitorar(numeros_processo)
+        # Salva os responsáveis no banco
+        database.adicionar_processos_para_monitorar(processos_com_responsavel)
+        
+        # Extrai APENAS os números de processo para entregar ao robô
+        numeros_processo = [item['numero'] for item in processos_com_responsavel]
         main.executar_rpa(numeros_processo)
 
         dados_painel = database.buscar_painel_dados()
@@ -46,7 +49,6 @@ def run_monitoring_endpoint():
         
         if not processos_para_rodar:
             print("API: Nenhum processo encontrado para monitorar.")
-            # Retorna os dados do painel mesmo que não tenha rodado nada
             dados_painel = database.buscar_painel_dados()
             return jsonify(dados_painel)
 
