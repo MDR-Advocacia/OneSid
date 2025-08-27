@@ -123,6 +123,7 @@ tbody tr:nth-child(even) {
   font-weight: bold;
   font-size: 0.9em;
   color: #fff;
+  white-space: nowrap; 
 }
 
 .status-Em-Monitoramento {
