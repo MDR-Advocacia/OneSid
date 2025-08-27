@@ -12,10 +12,24 @@ body {
 }
 
 .App-header {
-  background-color: #002776; /* Azul mais escuro do BB */
-  padding: 20px;
+  background-color: #2c3e50;
+  padding: 10px 40px;
   color: white;
   margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.App-header h1 {
+  margin: 0;
+  font-size: 1.8em;
+  font-weight: 700;
+}
+
+.header-logo {
+  height: 45px;
+  width: auto;
 }
 
 .panel-container {
@@ -55,7 +69,7 @@ textarea {
 }
 
 button {
-  background-color: #0057b8; /* Azul BB */
+  background-color: #0057b8;
   color: white;
   border: none;
   padding: 12px 20px;
@@ -76,7 +90,7 @@ button:disabled {
 }
 
 .archive-button {
-  background-color: #fddc01; /* Amarelo BB */
+  background-color: #fddc01;
   color: #002776;
   font-weight: bold;
   padding: 8px 12px;
@@ -116,29 +130,27 @@ tbody tr:nth-child(even) {
     color: #004085;
 }
 
-/* Estilos para os status */
 .status {
   padding: 5px 10px;
   border-radius: 12px;
   font-weight: bold;
   font-size: 0.9em;
   color: #fff;
-  white-space: nowrap; /* Adicionado para não quebrar a linha */
+  white-space: nowrap;
 }
 
 .status-Em-Monitoramento {
-  background-color: #ff9800; /* Laranja */
+  background-color: #ff9800;
 }
 
 .status-Pendente-Ciencia {
-  background-color: #2196F3; /* Azul */
+  background-color: #2196F3;
 }
 
 .status-Arquivado {
-  background-color: #4CAF50; /* Verde */
+  background-color: #4CAF50;
 }
 
-/* Estilos do Modal */
 .modal-backdrop {
   position: fixed;
   top: 0;
@@ -212,7 +224,6 @@ tbody tr:nth-child(even) {
     background-color: #5a6268;
 }
 
-/* ESTILOS PARA OS FILTROS */
 .filter-container {
   display: flex;
   gap: 15px;
@@ -227,10 +238,9 @@ tbody tr:nth-child(even) {
   border-radius: 4px;
 }
 
-/* ESTILOS PARA ORDENAÇÃO DA TABELA */
 .sortable-header {
   cursor: pointer;
-  user-select: none; /* Impede que o texto seja selecionado ao clicar */
+  user-select: none;
 }
 
 .sortable-header:hover {

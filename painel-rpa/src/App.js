@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import './App.css';
+import logo from './assets/logo-onesid.png'; // Importa a imagem do logo
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
@@ -39,8 +40,6 @@ function App() {
     responsavel: '',
     numero_processo: ''
   });
-  
-  // Estado para controlar a ordenação da tabela
   const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
 
   const fetchData = async () => {
@@ -48,7 +47,6 @@ function App() {
       const panelResponse = await fetch(`${API_BASE_URL}/painel`);
       const panelData = await panelResponse.json();
       setPanelList(panelData);
-
       const historyResponse = await fetch(`${API_BASE_URL}/historico`);
       const historyData = await historyResponse.json();
       setHistoryList(historyData);
@@ -138,18 +136,13 @@ function App() {
     }));
   };
 
-  // Combina a lógica de filtragem e ordenação
   const sortedAndFilteredPanelList = useMemo(() => {
     let list = [...panelList];
-
-    // 1. Aplica o filtro
     list = list.filter(proc => {
         const responsavelMatch = proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true;
         const processoMatch = proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase());
         return responsavelMatch && processoMatch;
     });
-
-    // 2. Aplica a ordenação
     if (sortConfig.key !== null) {
       list.sort((a, b) => {
         if (a[sortConfig.key] < b[sortConfig.key]) {
@@ -161,11 +154,9 @@ function App() {
         return 0;
       });
     }
-
     return list;
   }, [panelList, filters, sortConfig]);
 
-  // Função que muda a configuração da ordenação
   const requestSort = (key) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -174,11 +165,8 @@ function App() {
     setSortConfig({ key, direction });
   };
 
-  // Função para exibir um ícone de seta na coluna ordenada
   const getSortIcon = (name) => {
-    if (sortConfig.key !== name) {
-      return null;
-    }
+    if (sortConfig.key !== name) return null;
     return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
   };
 
@@ -187,7 +175,8 @@ function App() {
       <Modal processo={modalProcess} onClose={() => setModalProcess(null)} />
       <div className="App">
         <header className="App-header">
-          <h1>Painel de Monitoramento de Subsídios</h1>
+          <img src={logo} className="header-logo" alt="Logo OneSid" />
+          <h3>OneSid - RPA para acompanhamento de subsídios</h3>
         </header>
         <main className="panel-container">
           <div className="input-section">
@@ -210,41 +199,21 @@ function App() {
             </div>
             {message && <p className="feedback-message">{message}</p>}
           </div>
-          
           <div className="results-section">
             <h2>Painel de Controle</h2>
             <div className="filter-container">
-              <input
-                type="text"
-                name="responsavel"
-                placeholder="Filtrar por Responsável..."
-                value={filters.responsavel}
-                onChange={handleFilterChange}
-                className="filter-input"
-              />
-              <input
-                type="text"
-                name="numero_processo"
-                placeholder="Filtrar por Número do Processo..."
-                value={filters.numero_processo}
-                onChange={handleFilterChange}
-                className="filter-input"
-              />
+              <input type="text" name="responsavel" placeholder="Filtrar por Responsável..." value={filters.responsavel} onChange={handleFilterChange} className="filter-input" />
+              <input type="text" name="numero_processo" placeholder="Filtrar por Número do Processo..." value={filters.numero_processo} onChange={handleFilterChange} className="filter-input" />
             </div>
-
             {sortedAndFilteredPanelList.length > 0 ? (
               <table>
                 <thead>
                   <tr>
-                    <th onClick={() => requestSort('id')} className="sortable-header">
-                      ID{getSortIcon('id')}
-                    </th>
+                    <th onClick={() => requestSort('id')} className="sortable-header">ID{getSortIcon('id')}</th>
                     <th>Responsável Principal</th>
                     <th>Número do Processo</th>
                     <th>Status</th>
-                    <th onClick={() => requestSort('data_ultima_atualizacao')} className="sortable-header">
-                      Última Verificação{getSortIcon('data_ultima_atualizacao')}
-                    </th>
+                    <th onClick={() => requestSort('data_ultima_atualizacao')} className="sortable-header">Última Verificação{getSortIcon('data_ultima_atualizacao')}</th>
                     <th>Ação</th>
                   </tr>
                 </thead>
@@ -258,38 +227,20 @@ function App() {
                           {proc.numero_processo}
                         </button>
                       </td>
-                      <td>
-                        <span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>
-                          {proc.status_geral}
-                        </span>
-                      </td>
+                      <td><span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>{proc.status_geral}</span></td>
                       <td>{new Date(proc.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
-                      <td>
-                        {proc.status_geral === 'Pendente Ciencia' && (
-                          <button className="archive-button" onClick={() => handleArchiveProcess(proc.numero_processo)}>
-                            Dar Ciência
-                          </button>
-                        )}
-                      </td>
+                      <td>{proc.status_geral === 'Pendente Ciencia' && (<button className="archive-button" onClick={() => handleArchiveProcess(proc.numero_processo)}>Dar Ciência</button>)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : <p>Nenhum processo encontrado com os filtros aplicados.</p>}
           </div>
-
           <div className="results-section">
             <h2>Histórico de Processos Arquivados</h2>
             {historyList.length > 0 ? (
               <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Responsável Principal</th>
-                    <th>Número do Processo</th>
-                    <th>Data de Arquivamento</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>ID</th><th>Responsável Principal</th><th>Número do Processo</th><th>Data de Arquivamento</th></tr></thead>
                 <tbody>
                   {historyList.map((proc) => (
                     <tr key={proc.id}>
