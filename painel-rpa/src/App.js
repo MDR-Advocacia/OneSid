@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './App.css';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
@@ -35,12 +35,13 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [modalProcess, setModalProcess] = useState(null);
-
-  // --- NOVO ESTADO PARA OS FILTROS ---
   const [filters, setFilters] = useState({
     responsavel: '',
     numero_processo: ''
   });
+  
+  // Estado para controlar a ordenação da tabela
+  const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
 
   const fetchData = async () => {
     try {
@@ -129,7 +130,6 @@ function App() {
     }
   };
 
-  // --- NOVA FUNÇÃO PARA ATUALIZAR O ESTADO DOS FILTROS ---
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters(prevFilters => ({
@@ -138,13 +138,49 @@ function App() {
     }));
   };
 
-  // --- LÓGICA DE FILTRAGEM ---
-  // Filtra a lista do painel com base no estado dos filtros
-  const filteredPanelList = panelList.filter(proc => {
-    const responsavelMatch = proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true;
-    const processoMatch = proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase());
-    return responsavelMatch && processoMatch;
-  });
+  // Combina a lógica de filtragem e ordenação
+  const sortedAndFilteredPanelList = useMemo(() => {
+    let list = [...panelList];
+
+    // 1. Aplica o filtro
+    list = list.filter(proc => {
+        const responsavelMatch = proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true;
+        const processoMatch = proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase());
+        return responsavelMatch && processoMatch;
+    });
+
+    // 2. Aplica a ordenação
+    if (sortConfig.key !== null) {
+      list.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'ascending' ? -1 : 1;
+        }
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'ascending' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return list;
+  }, [panelList, filters, sortConfig]);
+
+  // Função que muda a configuração da ordenação
+  const requestSort = (key) => {
+    let direction = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // Função para exibir um ícone de seta na coluna ordenada
+  const getSortIcon = (name) => {
+    if (sortConfig.key !== name) {
+      return null;
+    }
+    return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
+  };
 
   return (
     <>
@@ -196,20 +232,24 @@ function App() {
               />
             </div>
 
-            {filteredPanelList.length > 0 ? (
+            {sortedAndFilteredPanelList.length > 0 ? (
               <table>
                 <thead>
                   <tr>
-                    <th>ID</th>
+                    <th onClick={() => requestSort('id')} className="sortable-header">
+                      ID{getSortIcon('id')}
+                    </th>
                     <th>Responsável Principal</th>
                     <th>Número do Processo</th>
                     <th>Status</th>
-                    <th>Última Verificação</th>
+                    <th onClick={() => requestSort('data_ultima_atualizacao')} className="sortable-header">
+                      Última Verificação{getSortIcon('data_ultima_atualizacao')}
+                    </th>
                     <th>Ação</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPanelList.map((proc) => (
+                  {sortedAndFilteredPanelList.map((proc) => (
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
                       <td>{proc.responsavel_principal}</td>

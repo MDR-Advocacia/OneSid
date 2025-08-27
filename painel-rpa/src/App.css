@@ -226,3 +226,13 @@ tbody tr:nth-child(even) {
   border: 1px solid #ccc;
   border-radius: 4px;
 }
+
+/* ESTILOS PARA ORDENAÇÃO DA TABELA */
+.sortable-header {
+  cursor: pointer;
+  user-select: none; /* Impede que o texto seja selecionado ao clicar */
+}
+
+.sortable-header:hover {
+  background-color: #e9e9e9;
+}
