@@ -36,6 +36,12 @@ function App() {
   const [message, setMessage] = useState('');
   const [modalProcess, setModalProcess] = useState(null);
 
+  // --- NOVO ESTADO PARA OS FILTROS ---
+  const [filters, setFilters] = useState({
+    responsavel: '',
+    numero_processo: ''
+  });
+
   const fetchData = async () => {
     try {
       const panelResponse = await fetch(`${API_BASE_URL}/painel`);
@@ -61,23 +67,19 @@ function App() {
         setMessage('Por favor, insira os dados no formato correto.');
         return;
     }
-
     const processosParaEnviar = lines.map(line => {
-        const parts = line.split('\t'); // Divide a linha pelo caractere TAB
+        const parts = line.split('\t');
         if (parts.length >= 2) {
             return { responsavel: parts[0].trim(), numero: parts[1].trim() };
         }
         return null;
     }).filter(Boolean);
-
     if (processosParaEnviar.length === 0) {
-        setMessage('Nenhum processo válido encontrado. Use o formato: Responsável [TAB] Processo.');
+        setMessage('Nenhum processo válido. Use o formato: Responsável [TAB] Processo.');
         return;
     }
-
     setIsLoading(true);
     setMessage('Adicionando e consultando novos processos...');
-    
     try {
       const response = await fetch(`${API_BASE_URL}/add-and-run`, {
         method: 'POST',
@@ -85,7 +87,6 @@ function App() {
         body: JSON.stringify({ processos: processosParaEnviar }),
       });
       if (!response.ok) throw new Error('Falha ao submeter novos processos.');
-      
       await fetchData();
       setMessage('Novos processos consultados com sucesso!');
       setProcessInput('');
@@ -128,6 +129,23 @@ function App() {
     }
   };
 
+  // --- NOVA FUNÇÃO PARA ATUALIZAR O ESTADO DOS FILTROS ---
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prevFilters => ({
+      ...prevFilters,
+      [name]: value
+    }));
+  };
+
+  // --- LÓGICA DE FILTRAGEM ---
+  // Filtra a lista do painel com base no estado dos filtros
+  const filteredPanelList = panelList.filter(proc => {
+    const responsavelMatch = proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true;
+    const processoMatch = proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase());
+    return responsavelMatch && processoMatch;
+  });
+
   return (
     <>
       <Modal processo={modalProcess} onClose={() => setModalProcess(null)} />
@@ -159,7 +177,26 @@ function App() {
           
           <div className="results-section">
             <h2>Painel de Controle</h2>
-            {panelList.length > 0 ? (
+            <div className="filter-container">
+              <input
+                type="text"
+                name="responsavel"
+                placeholder="Filtrar por Responsável..."
+                value={filters.responsavel}
+                onChange={handleFilterChange}
+                className="filter-input"
+              />
+              <input
+                type="text"
+                name="numero_processo"
+                placeholder="Filtrar por Número do Processo..."
+                value={filters.numero_processo}
+                onChange={handleFilterChange}
+                className="filter-input"
+              />
+            </div>
+
+            {filteredPanelList.length > 0 ? (
               <table>
                 <thead>
                   <tr>
@@ -172,7 +209,7 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {panelList.map((proc) => (
+                  {filteredPanelList.map((proc) => (
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
                       <td>{proc.responsavel_principal}</td>
@@ -198,7 +235,7 @@ function App() {
                   ))}
                 </tbody>
               </table>
-            ) : <p>Nenhum processo em monitoramento ou pendente.</p>}
+            ) : <p>Nenhum processo encontrado com os filtros aplicados.</p>}
           </div>
 
           <div className="results-section">

@@ -4,7 +4,7 @@ body {
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   background-color: #f4f7f9;
-  color: #070606;
+  color: #333;
 }
 
 .App {
@@ -12,7 +12,7 @@ body {
 }
 
 .App-header {
-  background-color: #00000083; /* Azul mais escuro do BB */
+  background-color: #002776; /* Azul mais escuro do BB */
   padding: 20px;
   color: white;
   margin-bottom: 30px;
@@ -113,7 +113,7 @@ tbody tr:nth-child(even) {
     border-radius: 4px;
     background-color: #e7f3fe;
     border: 1px solid #b3d7fb;
-    color: #101111;
+    color: #004085;
 }
 
 /* Estilos para os status */
@@ -123,7 +123,7 @@ tbody tr:nth-child(even) {
   font-weight: bold;
   font-size: 0.9em;
   color: #fff;
-  white-space: nowrap; 
+  white-space: nowrap; /* Adicionado para não quebrar a linha */
 }
 
 .status-Em-Monitoramento {
@@ -131,16 +131,14 @@ tbody tr:nth-child(even) {
 }
 
 .status-Pendente-Ciencia {
-  background-color: #39454e; /* Azul */
+  background-color: #2196F3; /* Azul */
 }
 
 .status-Arquivado {
   background-color: #4CAF50; /* Verde */
 }
 
-/* ... (todo o CSS anterior) ... */
-
-/* ESTILOS DO MODAL */
+/* Estilos do Modal */
 .modal-backdrop {
   position: fixed;
   top: 0;
@@ -184,17 +182,6 @@ tbody tr:nth-child(even) {
   background-color: #5a6268;
 }
 
-/* Estilo para o hyperlink do processo */
-td a {
-  color: #0057b8;
-  text-decoration: underline;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-/* ... (todo o CSS anterior) ... */
-
-/* Estilo para o botão que parece um link */
 .link-button {
   background: none;
   border: none;
@@ -202,12 +189,40 @@ td a {
   text-decoration: underline;
   cursor: pointer;
   padding: 0;
-  font-size: inherit; /* Usa o mesmo tamanho de fonte da tabela */
-  font-family: inherit; /* Usa a mesma fonte */
+  font-size: inherit;
+  font-family: inherit;
   font-weight: bold;
   text-align: left;
 }
 
 .link-button:hover {
   color: #00418a;
+}
+
+.button-group {
+    display: flex;
+    gap: 15px;
+}
+
+.secondary-button {
+    background-color: #6c757d;
+}
+
+.secondary-button:hover {
+    background-color: #5a6268;
+}
+
+/* ESTILOS PARA OS FILTROS */
+.filter-container {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.filter-input {
+  flex-grow: 1;
+  padding: 10px;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
 }
