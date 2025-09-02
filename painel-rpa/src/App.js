@@ -38,7 +38,10 @@ const ItensRelevantesModal = ({ onClose }) => {
             try {
                 const response = await fetch(`${API_BASE_URL}/itens-relevantes`);
                 const data = await response.json();
-                setItens(data.map(item => item.item_nome).join('\n'));
+                // Verificação de segurança
+                if (Array.isArray(data)) {
+                  setItens(data.map(item => item.item_nome).join('\n'));
+                }
                 setStatus('');
             } catch (e) {
                 setStatus('Erro ao carregar itens.');
@@ -104,10 +107,13 @@ function App() {
     try {
       const panelResponse = await fetch(`${API_BASE_URL}/painel`);
       const panelData = await panelResponse.json();
-      setPanelList(panelData);
+      // Verificação de segurança para garantir que sempre teremos um array
+      setPanelList(Array.isArray(panelData) ? panelData : []);
+
       const historyResponse = await fetch(`${API_BASE_URL}/historico`);
       const historyData = await historyResponse.json();
-      setHistoryList(historyData);
+      // Verificação de segurança para garantir que sempre teremos um array
+      setHistoryList(Array.isArray(historyData) ? historyData : []);
     } catch (error) {
       console.error("Falha ao buscar dados:", error);
       setMessage('Erro de conexão com o servidor.');
@@ -135,10 +141,12 @@ function App() {
         }
         return null;
     }).filter(Boolean);
+
     if (processosParaEnviar.length === 0) {
         setMessage('Nenhum processo válido encontrado. Verifique o formato colado da planilha.');
         return;
     }
+
     setIsLoading(true);
     setMessage('Adicionando e consultando novos processos...');
     try {
