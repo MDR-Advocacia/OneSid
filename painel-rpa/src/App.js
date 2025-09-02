@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import './App.css';
-import logo from './assets/logo-onesid.png'; // Importa a imagem do logo
+import logo from './assets/logo-onesid.png';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
@@ -29,6 +29,62 @@ const Modal = ({ processo, onClose }) => {
     );
 };
 
+const ItensRelevantesModal = ({ onClose }) => {
+    const [itens, setItens] = useState('');
+    const [status, setStatus] = useState('Carregando...');
+
+    useEffect(() => {
+        const fetchItens = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/itens-relevantes`);
+                const data = await response.json();
+                setItens(data.map(item => item.item_nome).join('\n'));
+                setStatus('');
+            } catch (e) {
+                setStatus('Erro ao carregar itens.');
+            }
+        };
+        fetchItens();
+    }, []);
+
+    const handleSave = async () => {
+        try {
+            setStatus('Salvando...');
+            const itensList = itens.split('\n').filter(Boolean);
+            await fetch(`${API_BASE_URL}/itens-relevantes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itens: itensList }),
+            });
+            setStatus('Salvo com sucesso!');
+            setTimeout(onClose, 1000);
+        } catch (e) {
+            setStatus('Erro ao salvar.');
+        }
+    };
+
+    return (
+        <div className="modal-backdrop" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <h3>Definir Itens Relevantes para Monitoramento</h3>
+                <p>Cole a lista de itens que são importantes. Apenas processos com TODOS estes itens concluídos serão movidos para "Pendente Ciência". Um item por linha.</p>
+                <textarea
+                    rows="15"
+                    value={itens}
+                    onChange={(e) => setItens(e.target.value)}
+                    placeholder="Cole a lista de itens aqui..."
+                />
+                <div className="modal-actions">
+                    <span className="feedback-message">{status}</span>
+                    <button onClick={handleSave} className="primary-button">Salvar e Fechar</button>
+                    <button onClick={onClose} className="secondary-button">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 function App() {
   const [processInput, setProcessInput] = useState('');
   const [panelList, setPanelList] = useState([]);
@@ -38,9 +94,11 @@ function App() {
   const [modalProcess, setModalProcess] = useState(null);
   const [filters, setFilters] = useState({
     responsavel: '',
-    numero_processo: ''
+    numero_processo: '',
+    classificacao: ''
   });
   const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
+  const [showItensModal, setShowItensModal] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -68,13 +126,17 @@ function App() {
     }
     const processosParaEnviar = lines.map(line => {
         const parts = line.split('\t');
-        if (parts.length >= 2) {
-            return { responsavel: parts[0].trim(), numero: parts[1].trim() };
+        if (parts.length >= 4) {
+            return { 
+                responsavel: parts[1].trim(), 
+                numero: parts[2].trim(),
+                classificacao: parts[3].trim()
+            };
         }
         return null;
     }).filter(Boolean);
     if (processosParaEnviar.length === 0) {
-        setMessage('Nenhum processo válido. Use o formato: Responsável [TAB] Processo.');
+        setMessage('Nenhum processo válido encontrado. Verifique o formato colado da planilha.');
         return;
     }
     setIsLoading(true);
@@ -141,7 +203,8 @@ function App() {
     list = list.filter(proc => {
         const responsavelMatch = proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true;
         const processoMatch = proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase());
-        return responsavelMatch && processoMatch;
+        const classificacaoMatch = proc.classificacao?.toLowerCase().includes(filters.classificacao.toLowerCase()) ?? true;
+        return responsavelMatch && processoMatch && classificacaoMatch;
     });
     if (sortConfig.key !== null) {
       list.sort((a, b) => {
@@ -172,19 +235,23 @@ function App() {
 
   return (
     <>
+      {showItensModal && <ItensRelevantesModal onClose={() => setShowItensModal(false)} />}
       <Modal processo={modalProcess} onClose={() => setModalProcess(null)} />
       <div className="App">
         <header className="App-header">
           <img src={logo} className="header-logo" alt="Logo OneSid" />
-          <h3>OneSid - RPA para acompanhamento de subsídios</h3>
+          <h1>OneSid</h1>
+          <button className="header-button" onClick={() => setShowItensModal(true)}>
+            Definir Itens
+          </button>
         </header>
         <main className="panel-container">
           <div className="input-section">
             <h2>Submeter Novos Processos</h2>
-            <p>Copie e cole da sua planilha (Responsável [TAB] Processo).</p>
+            <p>Copie e cole da sua planilha (as 4 colunas).</p>
             <textarea
               rows="8"
-              placeholder="Arthur Augusto Alves de Almeida	6031308-17.2025.8.03.0001"
+              placeholder="Escritório [TAB] Responsável [TAB] Processo [TAB] Classificação"
               value={processInput}
               onChange={(e) => setProcessInput(e.target.value)}
               disabled={isLoading}
@@ -203,7 +270,8 @@ function App() {
             <h2>Painel de Controle</h2>
             <div className="filter-container">
               <input type="text" name="responsavel" placeholder="Filtrar por Responsável..." value={filters.responsavel} onChange={handleFilterChange} className="filter-input" />
-              <input type="text" name="numero_processo" placeholder="Filtrar por Número do Processo..." value={filters.numero_processo} onChange={handleFilterChange} className="filter-input" />
+              <input type="text" name="numero_processo" placeholder="Filtrar por Número..." value={filters.numero_processo} onChange={handleFilterChange} className="filter-input" />
+              <input type="text" name="classificacao" placeholder="Filtrar por Classificação..." value={filters.classificacao} onChange={handleFilterChange} className="filter-input" />
             </div>
             {sortedAndFilteredPanelList.length > 0 ? (
               <table>
@@ -212,6 +280,7 @@ function App() {
                     <th onClick={() => requestSort('id')} className="sortable-header">ID{getSortIcon('id')}</th>
                     <th>Responsável Principal</th>
                     <th>Número do Processo</th>
+                    <th>Classificação dos Subsídios</th>
                     <th>Status</th>
                     <th onClick={() => requestSort('data_ultima_atualizacao')} className="sortable-header">Última Verificação{getSortIcon('data_ultima_atualizacao')}</th>
                     <th>Ação</th>
@@ -222,11 +291,8 @@ function App() {
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
                       <td>{proc.responsavel_principal}</td>
-                      <td>
-                        <button className="link-button" onClick={() => setModalProcess(proc)}>
-                          {proc.numero_processo}
-                        </button>
-                      </td>
+                      <td><button className="link-button" onClick={() => setModalProcess(proc)}>{proc.numero_processo}</button></td>
+                      <td>{proc.classificacao}</td>
                       <td><span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>{proc.status_geral}</span></td>
                       <td>{new Date(proc.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
                       <td>{proc.status_geral === 'Pendente Ciencia' && (<button className="archive-button" onClick={() => handleArchiveProcess(proc.numero_processo)}>Dar Ciência</button>)}</td>
@@ -240,13 +306,14 @@ function App() {
             <h2>Histórico de Processos Arquivados</h2>
             {historyList.length > 0 ? (
               <table>
-                <thead><tr><th>ID</th><th>Responsável Principal</th><th>Número do Processo</th><th>Data de Arquivamento</th></tr></thead>
+                <thead><tr><th>ID</th><th>Responsável Principal</th><th>Número do Processo</th><th>Classificação dos Subsídios</th><th>Data de Arquivamento</th></tr></thead>
                 <tbody>
                   {historyList.map((proc) => (
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
                       <td>{proc.responsavel_principal}</td>
                       <td>{proc.numero_processo}</td>
+                      <td>{proc.classificacao}</td>
                       <td>{new Date(proc.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
                     </tr>
                   ))}
