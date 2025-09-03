@@ -36,7 +36,6 @@ def inicializar_banco():
         )
     ''')
     
-    # --- NOVA TABELA PARA ITENS RELEVANTES ---
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS itens_relevantes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,10 +48,28 @@ def inicializar_banco():
     print("✔️ Banco de dados (re)inicializado com a estrutura mais recente.")
 
 def adicionar_processos_para_monitorar(processos_com_dados: list):
-    # ... (sem alterações)
-    pass
+    """Adiciona uma lista de processos ou atualiza o responsável/classificação se já existir."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    agora = datetime.datetime.now()
 
-# --- NOVA LÓGICA DE ATUALIZAÇÃO DE STATUS ---
+    for processo_info in processos_com_dados:
+        numero_limpo = _limpar_numero(processo_info['numero'])
+        cursor.execute(
+            """
+            INSERT INTO processos (numero_processo, responsavel_principal, classificacao, status_geral, data_ultima_atualizacao)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(numero_processo) DO UPDATE SET
+                responsavel_principal = excluded.responsavel_principal,
+                classificacao = excluded.classificacao;
+            """,
+            (numero_limpo, processo_info['responsavel'], processo_info['classificacao'], 'Em Monitoramento', agora)
+        )
+    conn.commit()
+    conn.close()
+    print(f"✔️ {len(processos_com_dados)} processos adicionados/atualizados para monitoramento.")
+
+
 def atualizar_status_processo(numero_processo: str, lista_subsidios: list):
     """
     Atualiza o status de um processo com base nos subsídios RELEVANTES
@@ -63,12 +80,10 @@ def atualizar_status_processo(numero_processo: str, lista_subsidios: list):
     agora = datetime.datetime.now()
     numero_processo_limpo = _limpar_numero(numero_processo)
 
-    # Pega a lista de itens relevantes do banco
     cursor.execute("SELECT item_nome FROM itens_relevantes")
     itens_relevantes = {row[0] for row in cursor.fetchall()}
     print(f"   - Itens relevantes para verificação: {itens_relevantes}")
 
-    # Salva/Atualiza o estado atual de TODOS os subsídios encontrados
     for subsidio in lista_subsidios:
         cursor.execute(
             """
@@ -85,17 +100,12 @@ def atualizar_status_processo(numero_processo: str, lista_subsidios: list):
         status_lower = status_str.lower()
         return status_lower == 'concluído' or status_lower == 'concluido'
 
-    # Filtra apenas os subsídios que estão na lista de relevantes
     subsidios_relevantes_encontrados = [s for s in lista_subsidios if s['item'] in itens_relevantes]
     
-    status_geral_novo = 'Em Monitoramento' # Padrão
+    status_geral_novo = 'Em Monitoramento'
     
-    if not subsidios_relevantes_encontrados and itens_relevantes:
-        # Se NENHUM subsídio relevante foi encontrado no processo, ele pode ser concluído
-        print(f"   - Nenhum subsídio relevante encontrado para o processo {numero_processo_limpo}. Marcando como pendente.")
-        status_geral_novo = 'Pendente Ciencia'
-    elif all(is_concluido(s['status']) for s in subsidios_relevantes_encontrados):
-        # Se TODOS os subsídios relevantes encontrados estão concluídos, o processo está pendente
+    # Se a lista de itens relevantes foi definida e TODOS os itens relevantes encontrados estão concluídos
+    if itens_relevantes and subsidios_relevantes_encontrados and all(is_concluido(s['status']) for s in subsidios_relevantes_encontrados):
         print(f"   - Todos os {len(subsidios_relevantes_encontrados)} subsídios relevantes estão concluídos. Marcando como pendente.")
         status_geral_novo = 'Pendente Ciencia'
     
@@ -173,7 +183,6 @@ def buscar_historico_arquivado():
     conn.close()
     return historico
 
-# --- NOVAS FUNÇÕES PARA GERENCIAR ITENS RELEVANTES ---
 def buscar_itens_relevantes():
     """Busca a lista de todos os itens relevantes."""
     conn = sqlite3.connect(DB_NAME)
@@ -189,12 +198,10 @@ def salvar_itens_relevantes(itens: list):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        # Apaga todos os itens antigos para garantir consistência
         cursor.execute("DELETE FROM itens_relevantes")
         
-        # Insere os novos itens
         for item in itens:
-            if item.strip(): # Garante que não vai inserir itens vazios
+            if item.strip():
                 cursor.execute("INSERT INTO itens_relevantes (item_nome) VALUES (?)", (item.strip(),))
         
         conn.commit()
@@ -204,10 +211,3 @@ def salvar_itens_relevantes(itens: list):
         print(f"❌ Erro ao salvar itens relevantes: {e}")
     finally:
         conn.close()
-
-# Funções que não foram alteradas e foram omitidas por brevidade
-def adicionar_processos_para_monitorar(processos_com_dados: list): pass
-def marcar_como_arquivado(numero_processo: str): pass
-def buscar_painel_dados(): pass
-def buscar_processos_em_monitoramento() -> list: pass
-def buscar_historico_arquivado(): pass
