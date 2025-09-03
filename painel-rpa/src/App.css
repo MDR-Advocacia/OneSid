@@ -277,3 +277,65 @@ tbody tr:nth-child(even) {
 .primary-button {
     width: auto; /* Para não ocupar 100% da largura no modal */
 }
+
+
+/* Estilos para o novo Gerenciador de Itens */
+.item-manager {
+  margin-top: 20px;
+}
+
+.item-add-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.item-add-form input {
+  flex-grow: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.add-button {
+  width: auto;
+  padding: 10px 20px;
+  background-color: #28a745; /* Verde */
+}
+
+.add-button:hover {
+  background-color: #218838;
+}
+
+.item-list {
+  list-style: none;
+  padding: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.item-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.item-list li:last-child {
+  border-bottom: none;
+}
+
+.remove-button {
+  width: auto;
+  padding: 5px 10px;
+  font-size: 0.9em;
+  background-color: #dc3545; /* Vermelho */
+}
+
+.remove-button:hover {
+  background-color: #c82333;
+}

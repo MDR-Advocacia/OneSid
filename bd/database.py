@@ -81,6 +81,58 @@ def atualizar_status_processo(numero_processo: str, lista_subsidios: list):
     numero_processo_limpo = _limpar_numero(numero_processo)
 
     cursor.execute("SELECT item_nome FROM itens_relevantes")
+    itens_relevantes_set = {row[0] for row in cursor.fetchall()}
+    print(f"   - Itens relevantes para verificação: {itens_relevantes_set}")
+
+    for subsidio in lista_subsidios:
+        cursor.execute(
+            """
+            INSERT INTO subsidios_atuais (numero_processo, item, status, data_atualizacao)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(numero_processo, item) DO UPDATE SET
+                status = excluded.status,
+                data_atualizacao = excluded.data_atualizacao;
+            """,
+            (numero_processo_limpo, subsidio['item'], subsidio['status'], agora)
+        )
+    
+    def is_concluido(status_str):
+        status_lower = status_str.lower()
+        return status_lower == 'concluído' or status_lower == 'concluido'
+
+    # --- LÓGICA CORRIGIDA ---
+    status_geral_novo = 'Em Monitoramento'
+
+    # Só prossiga se houver uma lista de itens relevantes definida
+    if itens_relevantes_set:
+        # Pega todos os subsídios encontrados para o processo que são concluídos
+        subsidios_concluidos_encontrados = {s['item'] for s in lista_subsidios if is_concluido(s['status'])}
+        
+        # Verifica se a lista de itens relevantes é um SUBCONJUNTO da lista de concluídos.
+        # Ou seja, verifica se TODOS os itens relevantes estão presentes na lista de concluídos.
+        if itens_relevantes_set.issubset(subsidios_concluidos_encontrados):
+            print(f"   - Todos os {len(itens_relevantes_set)} subsídios relevantes estão concluídos. Marcando como pendente.")
+            status_geral_novo = 'Pendente Ciencia'
+    # --- FIM DA LÓGICA CORRIGIDA ---
+
+    cursor.execute(
+        "UPDATE processos SET status_geral = ?, data_ultima_atualizacao = ? WHERE numero_processo = ?",
+        (status_geral_novo, agora, numero_processo_limpo)
+    )
+    
+    conn.commit()
+    conn.close()
+    print(f"✔️ Status do processo {numero_processo_limpo} atualizado para: {status_geral_novo}")
+    """
+    Atualiza o status de um processo com base nos subsídios RELEVANTES
+    e salva o log de todos os subsídios encontrados.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    agora = datetime.datetime.now()
+    numero_processo_limpo = _limpar_numero(numero_processo)
+
+    cursor.execute("SELECT item_nome FROM itens_relevantes")
     itens_relevantes = {row[0] for row in cursor.fetchall()}
     print(f"   - Itens relevantes para verificação: {itens_relevantes}")
 

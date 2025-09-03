@@ -30,17 +30,22 @@ const Modal = ({ processo, onClose }) => {
 };
 
 const ItensRelevantesModal = ({ onClose }) => {
-    const [itens, setItens] = useState('');
+    // Estado para a lista de itens
+    const [itens, setItens] = useState([]);
+    // Estado para o novo item que será adicionado
+    const [novoItem, setNovoItem] = useState('');
+    // Estado para as mensagens de feedback (Carregando, Salvo, Erro)
     const [status, setStatus] = useState('Carregando...');
 
+    // Efeito para buscar os itens quando o modal abre
     useEffect(() => {
         const fetchItens = async () => {
             try {
+                setStatus('Carregando...');
                 const response = await fetch(`${API_BASE_URL}/itens-relevantes`);
                 const data = await response.json();
-                // Verificação de segurança
                 if (Array.isArray(data)) {
-                  setItens(data.map(item => item.item_nome).join('\n'));
+                    setItens(data.map(item => item.item_nome));
                 }
                 setStatus('');
             } catch (e) {
@@ -50,14 +55,27 @@ const ItensRelevantesModal = ({ onClose }) => {
         fetchItens();
     }, []);
 
+    // Função para adicionar um novo item à lista (no estado)
+    const handleAddItem = () => {
+        if (novoItem && !itens.includes(novoItem.trim())) {
+            setItens([...itens, novoItem.trim()]);
+            setNovoItem(''); // Limpa o input
+        }
+    };
+
+    // Função para remover um item da lista (no estado)
+    const handleRemoveItem = (itemToRemove) => {
+        setItens(itens.filter(item => item !== itemToRemove));
+    };
+
+    // Função para salvar a lista final no banco de dados
     const handleSave = async () => {
         try {
             setStatus('Salvando...');
-            const itensList = itens.split('\n').filter(Boolean);
             await fetch(`${API_BASE_URL}/itens-relevantes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itens: itensList }),
+                body: JSON.stringify({ itens: itens }),
             });
             setStatus('Salvo com sucesso!');
             setTimeout(onClose, 1000);
@@ -70,13 +88,30 @@ const ItensRelevantesModal = ({ onClose }) => {
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <h3>Definir Itens Relevantes para Monitoramento</h3>
-                <p>Cole a lista de itens que são importantes. Apenas processos com TODOS estes itens concluídos serão movidos para "Pendente Ciência". Um item por linha.</p>
-                <textarea
-                    rows="15"
-                    value={itens}
-                    onChange={(e) => setItens(e.target.value)}
-                    placeholder="Cole a lista de itens aqui..."
-                />
+                <p>Adicione ou remova os itens que devem ser considerados para mover um processo para "Pendente Ciência".</p>
+                
+                <div className="item-manager">
+                    <div className="item-add-form">
+                        <input
+                            type="text"
+                            value={novoItem}
+                            onChange={(e) => setNovoItem(e.target.value)}
+                            placeholder="Digite o nome do novo item..."
+                            onKeyPress={(e) => e.key === 'Enter' && handleAddItem()}
+                        />
+                        <button onClick={handleAddItem} className="add-button">Adicionar</button>
+                    </div>
+                    
+                    <ul className="item-list">
+                        {itens.length > 0 ? itens.map((item, index) => (
+                            <li key={index}>
+                                <span>{item}</span>
+                                <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
+                            </li>
+                        )) : <p>Nenhum item relevante definido.</p>}
+                    </ul>
+                </div>
+
                 <div className="modal-actions">
                     <span className="feedback-message">{status}</span>
                     <button onClick={handleSave} className="primary-button">Salvar e Fechar</button>
@@ -289,7 +324,7 @@ function App() {
                     <th>Responsável Principal</th>
                     <th>Número do Processo</th>
                     <th>Classificação dos Subsídios</th>
-                    <th>Status</th>
+                    <th onClick={() => requestSort('status_geral')} className="sortable-header">Status{getSortIcon('status_geral')}</th>
                     <th onClick={() => requestSort('data_ultima_atualizacao')} className="sortable-header">Última Verificação{getSortIcon('data_ultima_atualizacao')}</th>
                     <th>Ação</th>
                   </tr>
