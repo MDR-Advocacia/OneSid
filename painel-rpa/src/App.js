@@ -4,40 +4,66 @@ import logo from './assets/logo-onesid.png';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
+// Modal ATUALIZADO para mostrar itens pendentes
 const Modal = ({ processo, onClose }) => {
     if (!processo) return null;
+
+    const temSubsidiosEncontrados = processo.subsidios && processo.subsidios.length > 0;
+    const temSubsidiosPendentes = processo.subsidios_pendentes && processo.subsidios_pendentes.length > 0;
+
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <h3>Detalhes do Subsídio - Processo {processo.numero_processo}</h3>
-                {processo.subsidios && processo.subsidios.length > 0 ? (
-                    <table>
-                        <thead><tr><th>Item</th><th>Status</th></tr></thead>
-                        <tbody>
-                            {processo.subsidios.map((sub, index) => (
-                                <tr key={index}>
-                                    <td>{sub.item}</td>
-                                    <td><strong>{sub.status}</strong></td>
-                                </tr>
+
+                {/* Seção para Itens Relevantes Pendentes */}
+                {temSubsidiosPendentes && (
+                    <div className="itens-pendentes-section">
+                        <h4>Itens Relevantes Pendentes</h4>
+                        <ul>
+                            {processo.subsidios_pendentes.map((item, index) => (
+                                <li key={index}>{item}</li>
                             ))}
-                        </tbody>
-                    </table>
-                ) : <p>Nenhum detalhe de subsídio encontrado para esta consulta.</p>}
+                        </ul>
+                    </div>
+                )}
+
+                {/* Seção para Subsídios Encontrados */}
+                {temSubsidiosEncontrados ? (
+                    <>
+                        <h4>Subsídios Encontrados</h4>
+                        <table>
+                            <thead><tr><th>Item</th><th>Status</th></tr></thead>
+                            <tbody>
+                                {processo.subsidios.map((sub, index) => (
+                                    <tr key={index}>
+                                        <td>{sub.item}</td>
+                                        <td><strong>{sub.status}</strong></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </>
+                ) : <p>Nenhum subsídio encontrado para este processo na última consulta.</p>}
+
+                {/* Mensagem caso tudo esteja concluído */}
+                {!temSubsidiosPendentes && temSubsidiosEncontrados && (
+                    <p className="feedback-message">Todos os itens relevantes foram encontrados para este processo.</p>
+                )}
+
                 <button className="modal-close-button" onClick={onClose}>Fechar</button>
             </div>
         </div>
     );
 };
 
+
+// Gerenciador de Itens Relevantes (CRUD)
 const ItensRelevantesModal = ({ onClose }) => {
-    // Estado para a lista de itens
     const [itens, setItens] = useState([]);
-    // Estado para o novo item que será adicionado
     const [novoItem, setNovoItem] = useState('');
-    // Estado para as mensagens de feedback (Carregando, Salvo, Erro)
     const [status, setStatus] = useState('Carregando...');
 
-    // Efeito para buscar os itens quando o modal abre
     useEffect(() => {
         const fetchItens = async () => {
             try {
@@ -55,20 +81,17 @@ const ItensRelevantesModal = ({ onClose }) => {
         fetchItens();
     }, []);
 
-    // Função para adicionar um novo item à lista (no estado)
     const handleAddItem = () => {
         if (novoItem && !itens.includes(novoItem.trim())) {
             setItens([...itens, novoItem.trim()]);
-            setNovoItem(''); // Limpa o input
+            setNovoItem('');
         }
     };
 
-    // Função para remover um item da lista (no estado)
     const handleRemoveItem = (itemToRemove) => {
         setItens(itens.filter(item => item !== itemToRemove));
     };
 
-    // Função para salvar a lista final no banco de dados
     const handleSave = async () => {
         try {
             setStatus('Salvando...');
@@ -138,16 +161,18 @@ function App() {
   const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
   const [showItensModal, setShowItensModal] = useState(false);
 
+  // Estados para a paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
   const fetchData = async () => {
     try {
       const panelResponse = await fetch(`${API_BASE_URL}/painel`);
       const panelData = await panelResponse.json();
-      // Verificação de segurança para garantir que sempre teremos um array
       setPanelList(Array.isArray(panelData) ? panelData : []);
 
       const historyResponse = await fetch(`${API_BASE_URL}/historico`);
       const historyData = await historyResponse.json();
-      // Verificação de segurança para garantir que sempre teremos um array
       setHistoryList(Array.isArray(historyData) ? historyData : []);
     } catch (error) {
       console.error("Falha ao buscar dados:", error);
@@ -239,6 +264,21 @@ function App() {
       ...prevFilters,
       [name]: value
     }));
+    setCurrentPage(1);
+  };
+
+  const requestSort = (key) => {
+    let direction = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+    setCurrentPage(1);
+  };
+
+  const getSortIcon = (name) => {
+    if (sortConfig.key !== name) return null;
+    return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
   };
 
   const sortedAndFilteredPanelList = useMemo(() => {
@@ -263,18 +303,13 @@ function App() {
     return list;
   }, [panelList, filters, sortConfig]);
 
-  const requestSort = (key) => {
-    let direction = 'ascending';
-    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key, direction });
-  };
+  const paginatedList = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return sortedAndFilteredPanelList.slice(startIndex, endIndex);
+  }, [sortedAndFilteredPanelList, currentPage, itemsPerPage]);
 
-  const getSortIcon = (name) => {
-    if (sortConfig.key !== name) return null;
-    return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
-  };
+  const totalPages = Math.ceil(sortedAndFilteredPanelList.length / itemsPerPage);
 
   return (
     <>
@@ -316,7 +351,27 @@ function App() {
               <input type="text" name="numero_processo" placeholder="Filtrar por Número..." value={filters.numero_processo} onChange={handleFilterChange} className="filter-input" />
               <input type="text" name="classificacao" placeholder="Filtrar por Classificação..." value={filters.classificacao} onChange={handleFilterChange} className="filter-input" />
             </div>
-            {sortedAndFilteredPanelList.length > 0 ? (
+            
+            <div className="pagination-controls">
+                <span>Exibir:</span>
+                <select value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                </select>
+                <div className="page-navigation">
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                        Anterior
+                    </button>
+                    <span>Página {currentPage} de {totalPages || 1}</span>
+                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0}>
+                        Próxima
+                    </button>
+                </div>
+            </div>
+            
+            {paginatedList.length > 0 ? (
               <table>
                 <thead>
                   <tr>
@@ -330,7 +385,7 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedAndFilteredPanelList.map((proc) => (
+                  {paginatedList.map((proc) => (
                     <tr key={proc.id}>
                       <td>{proc.id}</td>
                       <td>{proc.responsavel_principal}</td>
