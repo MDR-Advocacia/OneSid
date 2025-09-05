@@ -40,7 +40,28 @@ O sistema permite que os usuários, após autenticação, submetam listas de pro
     * **JavaScript (ES6+):** Para a lógica do painel.
 
 ## **Estrutura do Projeto**
-(A estrutura do projeto permanece a mesma)
+
+```
+/
+├── bd/
+│   └── database.py             # Módulo de controle do banco de dados SQLite
+├── painel-rpa/                 # Projeto do front-end em React
+│   ├── public/                 # Arquivos estáticos (index.html, favicon)
+│   └── src/                    # Código fonte do painel
+│       ├── assets/             # Imagens e logos
+│       ├── App.css             # Estilos do componente principal
+│       ├── App.js              # Componente principal da aplicação
+│       └── index.js            # Ponto de entrada do React
+├── RPA/
+│   ├── abrir_chrome.bat        # Script para iniciar o Chrome com modo de depuração
+│   ├── config.py               # Configurações do RPA (URLs, caminhos)
+│   ├── main.py                 # Orquestrador da execução do robô
+│   ├── navegador.py            # Funções para controlar o navegador
+│   ├── portal_bb.py            # Lógica de login no portal
+│   ├── processo.py             # Lógica de navegação e extração de dados
+│   └── server.py               # Servidor Flask (API)
+└── README.md                   # Este arquivo
+```
 
 ## **Pré-requisitos**
 
