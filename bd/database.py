@@ -2,6 +2,8 @@ import sqlite3
 import datetime
 import re
 
+from werkzeug.security import generate_password_hash, check_password_hash
+
 DB_NAME = 'rpa_dados.db'
 
 def _limpar_numero(numero_processo_bruto: str) -> str:
@@ -42,10 +44,49 @@ def inicializar_banco():
             item_nome TEXT UNIQUE
         )
     ''')
-    
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+    ''')
+
+    adicionar_usuario("admin", "mdr.123!@#")
+
+
     conn.commit()
     conn.close()
     print("✔️ Banco de dados (re)inicializado com a estrutura mais recente.")
+
+
+def adicionar_usuario(username, password):
+    """Adiciona um novo usuário ao banco com senha criptografada."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # Gera um "hash" da senha. É um caminho sem volta, garantindo a segurança.
+    password_hash = generate_password_hash(password)
+    try:
+        cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, password_hash))
+        conn.commit()
+        print(f"✔️ Usuário '{username}' criado com sucesso.")
+    except sqlite3.IntegrityError:
+        print(f"⚠️ Usuário '{username}' já existe.")
+    finally:
+        conn.close()
+
+def buscar_usuario_por_nome(username):
+    """Busca um usuário pelo nome e retorna seus dados."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    conn.close()
+    if user:
+        return dict(user)
+    return None
 
 def adicionar_processos_para_monitorar(processos_com_dados: list):
     """Adiciona uma lista de processos ou atualiza o responsável/classificação se já existir."""
