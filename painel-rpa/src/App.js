@@ -1,34 +1,27 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react'; // 1. Importe o useCallback
+import LoginPage from './LoginPage';
 import './App.css';
 import logo from './assets/logo-onesid.png';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
-// Modal ATUALIZADO para mostrar itens pendentes
+
 const Modal = ({ processo, onClose }) => {
     if (!processo) return null;
-
     const temSubsidiosEncontrados = processo.subsidios && processo.subsidios.length > 0;
     const temSubsidiosPendentes = processo.subsidios_pendentes && processo.subsidios_pendentes.length > 0;
-
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <h3>Detalhes do Subsídio - Processo {processo.numero_processo}</h3>
-
-                {/* Seção para Itens Relevantes Pendentes */}
                 {temSubsidiosPendentes && (
                     <div className="itens-pendentes-section">
                         <h4>Itens Relevantes Pendentes</h4>
                         <ul>
-                            {processo.subsidios_pendentes.map((item, index) => (
-                                <li key={index}>{item}</li>
-                            ))}
+                            {processo.subsidios_pendentes.map((item, index) => (<li key={index}>{item}</li>))}
                         </ul>
                     </div>
                 )}
-
-                {/* Seção para Subsídios Encontrados */}
                 {temSubsidiosEncontrados ? (
                     <>
                         <h4>Subsídios Encontrados</h4>
@@ -44,30 +37,37 @@ const Modal = ({ processo, onClose }) => {
                             </tbody>
                         </table>
                     </>
-                ) : <p>Nenhum subsídio encontrado para este processo na última consulta.</p>}
-
-                {/* Mensagem caso tudo esteja concluído */}
+                ) : <p>Nenhum subsídio encontrado para esta processo na última consulta.</p>}
                 {!temSubsidiosPendentes && temSubsidiosEncontrados && (
                     <p className="feedback-message">Todos os itens relevantes foram encontrados para este processo.</p>
                 )}
-
                 <button className="modal-close-button" onClick={onClose}>Fechar</button>
             </div>
         </div>
     );
 };
 
-// Gerenciador de Itens Relevantes (CRUD)
-const ItensRelevantesModal = ({ onClose }) => {
+const ItensRelevantesModal = ({ onClose, token, onAuthError }) => {
     const [itens, setItens] = useState([]);
     const [novoItem, setNovoItem] = useState('');
     const [status, setStatus] = useState('Carregando...');
+
+    const fetchWithAuth = useCallback(async (url, options = {}) => {
+        const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401) {
+            onAuthError();
+            throw new Error('Sessão expirada.');
+        }
+        return response;
+    }, [token, onAuthError]);
+
 
     useEffect(() => {
         const fetchItens = async () => {
             try {
                 setStatus('Carregando...');
-                const response = await fetch(`${API_BASE_URL}/itens-relevantes`);
+                const response = await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`);
                 const data = await response.json();
                 if (Array.isArray(data)) {
                     setItens(data.map(item => item.item_nome));
@@ -78,7 +78,7 @@ const ItensRelevantesModal = ({ onClose }) => {
             }
         };
         fetchItens();
-    }, []);
+    }, [fetchWithAuth]);
 
     const handleAddItem = () => {
         if (novoItem && !itens.includes(novoItem.trim())) {
@@ -86,15 +86,13 @@ const ItensRelevantesModal = ({ onClose }) => {
             setNovoItem('');
         }
     };
-
     const handleRemoveItem = (itemToRemove) => {
         setItens(itens.filter(item => item !== itemToRemove));
     };
-
     const handleSave = async () => {
         try {
             setStatus('Salvando...');
-            await fetch(`${API_BASE_URL}/itens-relevantes`, {
+            await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itens: itens }),
@@ -105,25 +103,16 @@ const ItensRelevantesModal = ({ onClose }) => {
             setStatus('Erro ao salvar.');
         }
     };
-
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <h3>Definir Itens Relevantes para Monitoramento</h3>
                 <p>Adicione ou remova os itens que devem ser considerados para mover um processo para "Pendente Ciência".</p>
-
                 <div className="item-manager">
                     <div className="item-add-form">
-                        <input
-                            type="text"
-                            value={novoItem}
-                            onChange={(e) => setNovoItem(e.target.value)}
-                            placeholder="Digite o nome do novo item..."
-                            onKeyPress={(e) => e.key === 'Enter' && handleAddItem()}
-                        />
+                        <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
                         <button onClick={handleAddItem} className="add-button">Adicionar</button>
                     </div>
-
                     <ul className="item-list">
                         {itens.length > 0 ? itens.map((item, index) => (
                             <li key={index}>
@@ -133,7 +122,6 @@ const ItensRelevantesModal = ({ onClose }) => {
                         )) : <p>Nenhum item relevante definido.</p>}
                     </ul>
                 </div>
-
                 <div className="modal-actions">
                     <span className="feedback-message">{status}</span>
                     <button onClick={handleSave} className="primary-button">Salvar e Fechar</button>
@@ -144,41 +132,49 @@ const ItensRelevantesModal = ({ onClose }) => {
     );
 };
 
-function App() {
+
+// Componente do Painel Principal
+const Dashboard = ({ token, onLogout }) => {
     const [processInput, setProcessInput] = useState('');
     const [panelList, setPanelList] = useState([]);
     const [historyList, setHistoryList] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [modalProcess, setModalProcess] = useState(null);
-    const [filters, setFilters] = useState({
-        responsavel: '',
-        numero_processo: '',
-        classificacao: ''
-    });
+    const [filters, setFilters] = useState({ responsavel: '', numero_processo: '', classificacao: '' });
     const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
     const [showItensModal, setShowItensModal] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
 
-    const fetchData = async () => {
+    const fetchWithAuth = useCallback(async (url, options = {}) => {
+        const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401) {
+            onLogout();
+            throw new Error('Sessão expirada.');
+        }
+        return response;
+    }, [token, onLogout]);
+
+    const fetchData = useCallback(async () => {
         try {
-            const panelResponse = await fetch(`${API_BASE_URL}/painel`);
+            const panelResponse = await fetchWithAuth(`${API_BASE_URL}/painel`);
             const panelData = await panelResponse.json();
             setPanelList(Array.isArray(panelData) ? panelData : []);
 
-            const historyResponse = await fetch(`${API_BASE_URL}/historico`);
+            const historyResponse = await fetchWithAuth(`${API_BASE_URL}/historico`);
             const historyData = await historyResponse.json();
             setHistoryList(Array.isArray(historyData) ? historyData : []);
         } catch (error) {
             console.error("Falha ao buscar dados:", error);
-            setMessage('Erro de conexão com o servidor.');
+            setMessage('Erro de conexão ou sessão expirada.');
         }
-    };
+    }, [fetchWithAuth]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
     const handleAddAndRun = async () => {
         const lines = processInput.split('\n').filter(line => line.trim() !== '');
@@ -189,11 +185,7 @@ function App() {
         const processosParaEnviar = lines.map(line => {
             const parts = line.split('\t');
             if (parts.length >= 4) {
-                return {
-                    responsavel: parts[1].trim(),
-                    numero: parts[2].trim(),
-                    classificacao: parts[3].trim()
-                };
+                return { responsavel: parts[1].trim(), numero: parts[2].trim(), classificacao: parts[3].trim() };
             }
             return null;
         }).filter(Boolean);
@@ -206,7 +198,7 @@ function App() {
         setIsLoading(true);
         setMessage('Adicionando e consultando novos processos...');
         try {
-            const response = await fetch(`${API_BASE_URL}/add-and-run`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/add-and-run`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ processos: processosParaEnviar }),
@@ -226,7 +218,7 @@ function App() {
         setIsLoading(true);
         setMessage('Iniciando monitoramento dos processos pendentes...');
         try {
-            const response = await fetch(`${API_BASE_URL}/run-monitoring`, { method: 'POST' });
+            const response = await fetchWithAuth(`${API_BASE_URL}/run-monitoring`, { method: 'POST' });
             if (!response.ok) throw new Error('Falha ao rodar monitoramento.');
             await fetchData();
             setMessage('Monitoramento finalizado com sucesso!');
@@ -240,7 +232,7 @@ function App() {
     const handleArchiveProcess = async (numero_processo) => {
         try {
             setMessage(`Arquivando processo ${numero_processo}...`);
-            const response = await fetch(`${API_BASE_URL}/arquivar-processo`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/arquivar-processo`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ numero_processo: numero_processo }),
@@ -258,11 +250,10 @@ function App() {
         setMessage('Gerando planilha...');
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/export-excel`);
+            const response = await fetchWithAuth(`${API_BASE_URL}/export-excel`);
             if (!response.ok) {
                 throw new Error('Falha ao gerar o arquivo no servidor.');
             }
-
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -272,9 +263,7 @@ function App() {
             a.click();
             a.remove();
             window.URL.revokeObjectURL(url);
-            
             setMessage('Planilha exportada com sucesso!');
-
         } catch (error) {
             console.error("Erro ao exportar:", error);
             setMessage('Erro ao exportar a planilha.');
@@ -285,10 +274,7 @@ function App() {
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
-        setFilters(prevFilters => ({
-            ...prevFilters,
-            [name]: value
-        }));
+        setFilters(prevFilters => ({ ...prevFilters, [name]: value }));
         setCurrentPage(1);
     };
 
@@ -308,20 +294,15 @@ function App() {
 
     const sortedAndFilteredPanelList = useMemo(() => {
         let list = [...panelList];
-        list = list.filter(proc => {
-            const responsavelMatch = proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true;
-            const processoMatch = proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase());
-            const classificacaoMatch = proc.classificacao?.toLowerCase().includes(filters.classificacao.toLowerCase()) ?? true;
-            return responsavelMatch && processoMatch && classificacaoMatch;
-        });
+        list = list.filter(proc =>
+            (proc.responsavel_principal?.toLowerCase().includes(filters.responsavel.toLowerCase()) ?? true) &&
+            proc.numero_processo.toLowerCase().includes(filters.numero_processo.toLowerCase()) &&
+            (proc.classificacao?.toLowerCase().includes(filters.classificacao.toLowerCase()) ?? true)
+        );
         if (sortConfig.key !== null) {
             list.sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (a[sortConfig.key] > b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
+                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
+                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
                 return 0;
             });
         }
@@ -330,42 +311,32 @@ function App() {
 
     const paginatedList = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        return sortedAndFilteredPanelList.slice(startIndex, endIndex);
+        return sortedAndFilteredPanelList.slice(startIndex, startIndex + itemsPerPage);
     }, [sortedAndFilteredPanelList, currentPage, itemsPerPage]);
 
     const totalPages = Math.ceil(sortedAndFilteredPanelList.length / itemsPerPage);
 
     return (
         <>
-            {showItensModal && <ItensRelevantesModal onClose={() => setShowItensModal(false)} />}
+            {showItensModal && <ItensRelevantesModal onClose={() => setShowItensModal(false)} token={token} onAuthError={onLogout} />}
             <Modal processo={modalProcess} onClose={() => setModalProcess(null)} />
             <div className="App">
                 <header className="App-header">
                     <img src={logo} className="header-logo" alt="Logo OneSid" />
                     <h1>OneSid</h1>
-                    <button className="header-button" onClick={() => setShowItensModal(true)}>
-                        Definir Itens
-                    </button>
+                    <div>
+                        <button className="header-button" onClick={() => setShowItensModal(true)}>Definir Itens</button>
+                        <button className="header-button" onClick={onLogout} style={{ marginLeft: '10px' }}>Sair</button>
+                    </div>
                 </header>
                 <main className="panel-container">
                     <div className="input-section">
                         <h2>Submeter Novos Processos</h2>
                         <p>Copie e cole da sua planilha (as 4 colunas).</p>
-                        <textarea
-                            rows="8"
-                            placeholder="Escritório [TAB] Responsável [TAB] Processo [TAB] Classificação"
-                            value={processInput}
-                            onChange={(e) => setProcessInput(e.target.value)}
-                            disabled={isLoading}
-                        />
+                        <textarea rows="8" placeholder="Escritório [TAB] Responsável [TAB] Processo [TAB] Classificação" value={processInput} onChange={(e) => setProcessInput(e.target.value)} disabled={isLoading} />
                         <div className="button-group">
-                            <button onClick={handleAddAndRun} disabled={isLoading}>
-                                {isLoading ? 'Aguarde...' : 'Adicionar e Consultar Novos'}
-                            </button>
-                            <button onClick={handleRunMonitoring} disabled={isLoading} className="secondary-button">
-                                {isLoading ? 'Aguarde...' : "Rodar Monitoramento"}
-                            </button>
+                            <button onClick={handleAddAndRun} disabled={isLoading}>{isLoading ? 'Aguarde...' : 'Adicionar e Consultar Novos'}</button>
+                            <button onClick={handleRunMonitoring} disabled={isLoading} className="secondary-button">{isLoading ? 'Aguarde...' : "Rodar Monitoramento"}</button>
                         </div>
                         {message && <p className="feedback-message">{message}</p>}
                     </div>
@@ -376,13 +347,9 @@ function App() {
                             <input type="text" name="numero_processo" placeholder="Filtrar por Número..." value={filters.numero_processo} onChange={handleFilterChange} className="filter-input" />
                             <input type="text" name="classificacao" placeholder="Filtrar por Classificação..." value={filters.classificacao} onChange={handleFilterChange} className="filter-input" />
                         </div>
-
                         <div className="export-button-container">
-                            <button onClick={handleExport} disabled={isLoading} className="secondary-button">
-                                {isLoading ? 'Exportando...' : 'Exportar para Excel'}
-                            </button>
+                            <button onClick={handleExport} disabled={isLoading} className="secondary-button">{isLoading ? 'Exportando...' : 'Exportar para Excel'}</button>
                         </div>
-
                         <div className="pagination-controls">
                             <span>Exibir:</span>
                             <select value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
@@ -392,16 +359,11 @@ function App() {
                                 <option value={100}>100</option>
                             </select>
                             <div className="page-navigation">
-                                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
-                                    Anterior
-                                </button>
+                                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Anterior</button>
                                 <span>Página {currentPage} de {totalPages || 1}</span>
-                                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0}>
-                                    Próxima
-                                </button>
+                                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0}>Próxima</button>
                             </div>
                         </div>
-
                         {paginatedList.length > 0 ? (
                             <table>
                                 <thead>
@@ -453,6 +415,25 @@ function App() {
                 </main>
             </div>
         </>
+    );
+};
+
+
+function App() {
+    const [token, setToken] = useState(localStorage.getItem('user_token'));
+
+    const handleLoginSuccess = (newToken) => {
+        localStorage.setItem('user_token', newToken);
+        setToken(newToken);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('user_token');
+        setToken(null);
+    };
+
+    return (
+        token ? <Dashboard token={token} onLogout={handleLogout} /> : <LoginPage onLoginSuccess={handleLoginSuccess} />
     );
 }
 
