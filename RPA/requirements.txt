@@ -1,4 +1,7 @@
 Flask
 Flask-Cors
 playwright
+Flask-JWT-Extended
+Werkzeug
 openpyxl
+gunicorn

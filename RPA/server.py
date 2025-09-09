@@ -27,7 +27,7 @@ app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = "uma-chave-super-secreta-e-diferente" # Mude para uma chave segura
 
 # Habilita o CORS para a aplicação
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}) 
 
 # Inicializa o JWTManager com a aplicação
 jwt = JWTManager(app)

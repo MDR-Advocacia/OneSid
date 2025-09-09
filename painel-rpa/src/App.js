@@ -3,7 +3,7 @@ import LoginPage from './LoginPage';
 import './App.css';
 import logo from './assets/logo-onesid.png';
 
-const API_BASE_URL = 'http://127.0.0.1:5000';
+const API_BASE_URL = '';
 
 
 const Modal = ({ processo, onClose }) => {
