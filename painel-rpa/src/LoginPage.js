@@ -41,7 +41,7 @@ const LoginPage = ({ onLoginSuccess }) => {
         <div className="login-container">
             <div className="login-box">
                 <img src={logo} alt="OneSid Logo" className="login-logo" />
-                <h2>Acessar Painel</h2>
+                <h2>Acessar Painel RPA</h2>
                 <form onSubmit={handleSubmit}>
                     <div className="input-group">
                         <label htmlFor="username">Usuário</label>
