@@ -53,7 +53,7 @@ def inicializar_banco():
         )
     ''')
 
-    adicionar_usuario("admin", "mdr.123!@#")
+    adicionar_usuario("mdr", "mdr.123")
 
 
     conn.commit()
