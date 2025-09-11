@@ -148,6 +148,44 @@ def add_and_run_endpoint():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Erro: {e}"}), 500
+    
+# --- NOVAS ROTAS PARA GERENCIAMENTO DE USUÁRIOS (Admin) ---
+
+@app.route('/users', methods=['GET'])
+@jwt_required()
+@admin_required()
+def get_all_users():
+    """Retorna uma lista de todos os usuários (sem as senhas)."""
+    try:
+        users = database.listar_todos_usuarios()
+        return jsonify(users)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro ao buscar usuários: {e}"}), 500
+
+@app.route('/users', methods=['POST'])
+@jwt_required()
+@admin_required()
+def create_user():
+    """Cria um novo usuário."""
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', 'user') # O padrão é 'user' se não for especificado
+
+    if not username or not password:
+        return jsonify({"msg": "Nome de usuário e senha são obrigatórios."}), 400
+    
+    # Verifica se o usuário já existe
+    if database.buscar_usuario_por_nome(username):
+        return jsonify({"msg": f"O nome de usuário '{username}' já está em uso."}), 409 # 409 Conflict
+
+    try:
+        database.adicionar_usuario(username, password, role)
+        return jsonify({"success": True, "msg": f"Usuário '{username}' criado com sucesso."}), 201
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro ao criar usuário: {e}"}), 500
 
 @app.route('/run-monitoring', methods=['POST'])
 @jwt_required()

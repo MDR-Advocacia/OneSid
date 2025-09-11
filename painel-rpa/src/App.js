@@ -47,12 +47,19 @@ const Modal = ({ processo, onClose }) => {
     );
 };
 
-// --- NOVO MODAL DE CONFIGURAÇÕES (Substitui o ItensRelevantesModal) ---
+// --- MODAL DE CONFIGURAÇÕES COM ABAS ---
 const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
+    const [activeTab, setActiveTab] = useState('itens');
+
     const [itens, setItens] = useState([]);
-    const [novoItem, setNovoItem] = useState(''); // Usado apenas por admin
-    const [status, setStatus] = useState('Carregando...');
-    const [error, setError] = useState('');
+    const [novoItem, setNovoItem] = useState('');
+    const [itensStatus, setItensStatus] = useState('Carregando...');
+
+    const [userList, setUserList] = useState([]);
+    const [newUsername, setNewUsername] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [newUserRole, setNewUserRole] = useState('user');
+    const [userStatus, setUserStatus] = useState('');
 
     const fetchWithAuth = useCallback(async (url, options = {}) => {
         const headers = { 'Content-Type': 'application/json', ...options.headers, 'Authorization': `Bearer ${token}` };
@@ -61,141 +68,180 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
             onAuthError();
             throw new Error('Sessão expirada.');
         }
-        return response;
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ msg: "Erro desconhecido" }));
+            throw new Error(errorData.msg);
+        }
+        return response.json();
     }, [token, onAuthError]);
 
-    // Carrega os dados corretos com base na permissão do usuário
     useEffect(() => {
-        const fetchData = async () => {
+        const fetchItensData = async () => {
             try {
-                setStatus('Carregando...');
-                setError('');
+                setItensStatus('Carregando...');
                 if (userRole === 'admin') {
-                    const response = await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`);
-                    const data = await response.json();
-                    if (Array.isArray(data)) {
-                        setItens(data.map(item => item.item_nome)); // Admin usa lista de strings
-                    }
+                    const data = await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`);
+                    setItens(Array.isArray(data) ? data.map(item => item.item_nome) : []);
                 } else {
-                    const response = await fetchWithAuth(`${API_BASE_URL}/preferencias-usuario`);
-                    const data = await response.json(); // Usuário usa lista de objetos
-                    if (Array.isArray(data)) {
-                        setItens(data);
-                    }
+                    const data = await fetchWithAuth(`${API_BASE_URL}/preferencias-usuario`);
+                    setItens(Array.isArray(data) ? data : []);
                 }
-                setStatus('');
-            } catch (e) {
-                setStatus('Erro ao carregar dados.');
-                setError(e.message);
+                setItensStatus('');
+            } catch (e) { setItensStatus(`Erro: ${e.message}`); }
+        };
+
+        const fetchUsersData = async () => {
+            if (userRole === 'admin') {
+                try {
+                    setUserStatus('Carregando usuários...');
+                    const data = await fetchWithAuth(`${API_BASE_URL}/users`);
+                    setUserList(Array.isArray(data) ? data : []);
+                    setUserStatus('');
+                } catch (e) { setUserStatus(`Erro: ${e.message}`); }
             }
         };
-        fetchData();
-    }, [fetchWithAuth, userRole]);
 
-    // --- Funções de Admin ---
-    const handleAddItem = () => {
-        if (novoItem && !itens.includes(novoItem.trim())) {
-            setItens([...itens, novoItem.trim()]);
-            setNovoItem('');
-        }
-    };
-    const handleRemoveItem = (itemToRemove) => {
-        setItens(itens.filter(item => item !== itemToRemove));
-    };
-    const handleSaveAdmin = async () => {
+        if (activeTab === 'itens') fetchItensData();
+        if (activeTab === 'usuarios') fetchUsersData();
+
+    }, [fetchWithAuth, userRole, activeTab]);
+
+    // --- Funções da Aba de ITENS ---
+    // ################### AQUI ESTÁ A CORREÇÃO ###################
+    const handleAddItem = () => { if (novoItem && !itens.includes(novoItem.trim())) setItens([...itens, novoItem.trim()]); setNovoItem(''); };
+    // ###########################################################
+    const handleRemoveItem = (itemToRemove) => setItens(itens.filter(item => item !== itemToRemove));
+    const handleSaveAdminItems = async () => {
         try {
-            setStatus('Salvando...');
-            await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`, {
-                method: 'POST',
-                body: JSON.stringify({ itens: itens }),
-            });
-            setStatus('Salvo com sucesso!');
+            setItensStatus('Salvando...');
+            await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`, { method: 'POST', body: JSON.stringify({ itens }) });
+            setItensStatus('Salvo!');
             setTimeout(onClose, 1000);
+        } catch (e) { setItensStatus(`Erro: ${e.message}`); }
+    };
+    const handleUserPreferenceChange = async (itemId, isEnabled) => {
+        setItens(prev => prev.map(item => item.id === itemId ? { ...item, is_enabled: isEnabled } : item));
+        try {
+            await fetchWithAuth(`${API_BASE_URL}/preferencias-usuario`, { method: 'PUT', body: JSON.stringify({ item_id: itemId, is_enabled: isEnabled }) });
         } catch (e) {
-            setStatus('Erro ao salvar.');
+            setItensStatus(`Erro: ${e.message}`);
+            setItens(prev => prev.map(item => item.id === itemId ? { ...item, is_enabled: !isEnabled } : item));
         }
     };
 
-    // --- Função de Usuário ---
-    const handleUserPreferenceChange = async (itemId, isEnabled) => {
-        // Atualiza o estado visualmente primeiro para uma resposta rápida
-        setItens(prevItens => prevItens.map(item =>
-            item.id === itemId ? { ...item, is_enabled: isEnabled } : item
-        ));
+    const handleCreateUser = async (e) => {
+        e.preventDefault();
+        setUserStatus('Criando usuário...');
         try {
-            // Envia a atualização para a API
-            await fetchWithAuth(`${API_BASE_URL}/preferencias-usuario`, {
-                method: 'PUT',
-                body: JSON.stringify({ item_id: itemId, is_enabled: isEnabled }),
+            const result = await fetchWithAuth(`${API_BASE_URL}/users`, {
+                method: 'POST',
+                body: JSON.stringify({ username: newUsername, password: newPassword, role: newUserRole }),
             });
-        } catch (error) {
-            setError("Falha ao atualizar preferência. Tente novamente.");
-            // Reverte a mudança se a API falhar
-            setItens(prevItens => prevItens.map(item =>
-                item.id === itemId ? { ...item, is_enabled: !isEnabled } : item
-            ));
+            setUserStatus(result.msg);
+            const data = await fetchWithAuth(`${API_BASE_URL}/users`);
+            setUserList(Array.isArray(data) ? data : []);
+            setNewUsername('');
+            setNewPassword('');
+        } catch (e) {
+            setUserStatus(`Erro: ${e.message}`);
         }
     };
 
     return (
         <div className="modal-backdrop" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <h3>{userRole === 'admin' ? 'Definir Itens Relevantes' : 'Minhas Preferências de Itens'}</h3>
-                <p>
-                    {userRole === 'admin'
-                        ? 'Adicione ou remova os itens da lista mestra para o monitoramento.'
-                        : 'Habilite ou desabilite os itens que você considera relevantes.'}
-                </p>
-
-                {userRole === 'admin' ? (
-                    // --- Interface do Administrador ---
-                    <div className="item-manager">
-                        <div className="item-add-form">
-                            <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
-                            <button onClick={handleAddItem} className="add-button">Adicionar</button>
+            <div className="modal-content large" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Configurações</h2>
+                    {userRole === 'admin' && (
+                        <div className="modal-tabs">
+                            <button className={`tab-button ${activeTab === 'itens' ? 'active' : ''}`} onClick={() => setActiveTab('itens')}>Itens Relevantes</button>
+                            <button className={`tab-button ${activeTab === 'usuarios' ? 'active' : ''}`} onClick={() => setActiveTab('usuarios')}>Gerenciar Usuários</button>
                         </div>
-                        <ul className="item-list">
-                            {itens.length > 0 ? itens.map((item, index) => (
-                                <li key={index}>
-                                    <span>{item}</span>
-                                    <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
-                                </li>
-                            )) : <p>Nenhum item relevante definido.</p>}
-                        </ul>
-                    </div>
-                ) : (
-                    // --- Interface do Usuário ---
-                    <div className="preferences-list">
-                        {itens.map(item => (
-                            <div key={item.id} className="preference-item">
-                                <span>{item.item_nome}</span>
-                                <label className="toggle-switch">
-                                    <input
-                                        type="checkbox"
-                                        checked={item.is_enabled}
-                                        onChange={(e) => handleUserPreferenceChange(item.id, e.target.checked)}
-                                    />
-                                    <span className="slider"></span>
-                                </label>
+                    )}
+                </div>
+                {activeTab === 'itens' && (
+                    <>
+                        <h3>{userRole === 'admin' ? 'Definir Itens Relevantes' : 'Minhas Preferências de Itens'}</h3>
+                        <p>{userRole === 'admin' ? 'Adicione ou remova itens da lista mestra.' : 'Habilite ou desabilite os itens que deseja monitorar.'}</p>
+                        {userRole === 'admin' ? (
+                            <div className="item-manager">
+                                <div className="item-add-form">
+                                    <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
+                                    <button onClick={handleAddItem} className="add-button">Adicionar</button>
+                                </div>
+                                <ul className="item-list">
+                                    {itens.length > 0 ? itens.map((item, index) => (
+                                        <li key={index}>
+                                            <span>{item}</span>
+                                            <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
+                                        </li>
+                                    )) : <p>Nenhum item relevante definido.</p>}
+                                </ul>
                             </div>
-                        ))}
+                        ) : (
+                            <div className="preferences-list">
+                                {itens.map(item => (
+                                    <div key={item.id} className="preference-item">
+                                        <span>{item.item_nome}</span>
+                                        <label className="toggle-switch">
+                                            <input type="checkbox" checked={item.is_enabled} onChange={(e) => handleUserPreferenceChange(item.id, e.target.checked)} />
+                                            <span className="slider"></span>
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="modal-actions">
+                            <span className="feedback-message">{itensStatus}</span>
+                            {userRole === 'admin' && <button onClick={handleSaveAdminItems} className="primary-button">Salvar</button>}
+                            <button onClick={onClose} className="secondary-button">Fechar</button>
+                        </div>
+                    </>
+                )}
+                {activeTab === 'usuarios' && userRole === 'admin' && (
+                    <div className="user-management-grid">
+                        <div className="user-list">
+                            <h4>Usuários Existentes</h4>
+                            <ul>
+                                {userList.map(user => (
+                                    <li key={user.id}>
+                                        <span>{user.username}</span>
+                                        <span className="user-role">{user.role}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <div className="user-form">
+                            <h4>Criar Novo Usuário</h4>
+                            <form onSubmit={handleCreateUser}>
+                                <div className="form-group">
+                                    <label htmlFor="username">Nome de Usuário</label>
+                                    <input type="text" id="username" value={newUsername} onChange={e => setNewUsername(e.target.value)} required />
+                                </div>
+                                <div className="form-group">
+                                    <label htmlFor="password">Senha</label>
+                                    <input type="password" id="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
+                                </div>
+                                <div className="form-group">
+                                    <label htmlFor="role">Permissão</label>
+                                    <select id="role" value={newUserRole} onChange={e => setNewUserRole(e.target.value)}>
+                                        <option value="user">Usuário</option>
+                                        <option value="admin">Administrador</option>
+                                    </select>
+                                </div>
+                                <button type="submit" className="primary-button">Criar Usuário</button>
+                                <span className="feedback-message" style={{ marginLeft: '15px' }}>{userStatus}</span>
+                            </form>
+                        </div>
                     </div>
                 )}
-
-                {error && <p className="feedback-message error">{error}</p>}
-
-                <div className="modal-actions">
-                    <span className="feedback-message">{status}</span>
-                    {userRole === 'admin' && <button onClick={handleSaveAdmin} className="primary-button">Salvar e Fechar</button>}
-                    <button onClick={onClose} className="secondary-button">{userRole === 'admin' ? 'Cancelar' : 'Fechar'}</button>
-                </div>
             </div>
         </div>
     );
 };
 
-// --- SEU COMPONENTE DASHBOARD (com pequenas modificações) ---
-const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
+// --- SEU COMPONENTE DASHBOARD (sem alterações) ---
+const Dashboard = ({ token, onLogout, userRole }) => {
     const [processInput, setProcessInput] = useState('');
     const [panelList, setPanelList] = useState([]);
     const [historyList, setHistoryList] = useState([]);
@@ -204,7 +250,7 @@ const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
     const [modalProcess, setModalProcess] = useState(null);
     const [filters, setFilters] = useState({ responsavel: '', numero_processo: '', classificacao: '' });
     const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
-    const [showSettingsModal, setShowSettingsModal] = useState(false); // Novo estado para o modal de configurações
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
 
@@ -237,7 +283,6 @@ const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
         fetchData();
     }, [fetchData]);
 
-    // O resto das suas funções (handleAddAndRun, handleRunMonitoring, etc.) permanecem exatamente as mesmas
     const handleAddAndRun = async () => {
         const lines = processInput.split('\n').filter(line => line.trim() !== '');
         if (lines.length === 0) {
@@ -344,7 +389,6 @@ const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
         setCurrentPage(1);
     };
 
-    // Suas funções de ordenação e paginação (useMemo, etc) permanecem intactas
     const getSortIcon = (name) => {
         if (sortConfig.key !== name) return null;
         return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
@@ -374,22 +418,18 @@ const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
 
     return (
         <>
-            {/* Renderiza o novo Modal de Configurações */}
             {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} token={token} onAuthError={onLogout} userRole={userRole} />}
-
             <Modal processo={modalProcess} onClose={() => setModalProcess(null)} />
             <div className="App">
                 <header className="App-header">
                     <img src={logo} className="header-logo" alt="Logo OneSid" />
                     <h1>OneSid</h1>
                     <div>
-                        {/* O botão agora abre o novo modal de configurações */}
                         <button className="header-button" onClick={() => setShowSettingsModal(true)}>Configurações</button>
                         <button className="header-button" onClick={onLogout} style={{ marginLeft: '10px' }}>Sair</button>
                     </div>
                 </header>
                 <main className="panel-container">
-                    {/* Todo o resto da sua interface (input-section, results-section, tabelas, etc.) permanece exatamente igual */}
                     <div className="input-section">
                         <h2>Submeter Novos Processos</h2>
                         <p>Copie e cole da sua planilha (as 4 colunas).</p>
@@ -478,30 +518,28 @@ const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
     );
 };
 
-// --- SEU COMPONENTE APP (com lógica de role) ---
+// --- SEU COMPONENTE APP (sem alterações) ---
 function App() {
     const [token, setToken] = useState(localStorage.getItem('user_token'));
-    const [userRole, setUserRole] = useState(localStorage.getItem('user_role')); // Novo estado para a role
+    const [userRole, setUserRole] = useState(localStorage.getItem('user_role'));
 
-    // Função de login agora salva o token E a role
     const handleLoginSuccess = (newToken, role) => {
         localStorage.setItem('user_token', newToken);
-        localStorage.setItem('user_role', role); // Salva a role
+        localStorage.setItem('user_role', role);
         setToken(newToken);
         setUserRole(role);
     };
 
-    // Função de logout agora limpa o token E a role
     const handleLogout = () => {
         localStorage.removeItem('user_token');
-        localStorage.removeItem('user_role'); // Limpa a role
+        localStorage.removeItem('user_role');
         setToken(null);
         setUserRole(null);
     };
 
     return (
         token && userRole
-            ? <Dashboard token={token} onLogout={handleLogout} userRole={userRole} /> // Passa a role para o Dashboard
+            ? <Dashboard token={token} onLogout={handleLogout} userRole={userRole} />
             : <LoginPage onLoginSuccess={handleLoginSuccess} />
     );
 }
