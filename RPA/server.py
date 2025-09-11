@@ -24,16 +24,12 @@ database.inicializar_banco()
 app = Flask(__name__)
 
 # --- CONFIGURAÇÕES DA APLICAÇÃO ---
-# DICA DE SEGURANÇA: É melhor carregar isso de uma variável de ambiente
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "uma-chave-super-secreta-e-diferente")
 CORS(app)
 jwt = JWTManager(app)
-# --- FIM DAS CONFIGURAÇÕES ---
 
-
-# --- DECORADOR DE PERMISSÃO DE ADMIN ---
+# --- DECORADOR DE PERMISSÃO DE ADMIN (mantido) ---
 def admin_required():
-    """Decorador que protege uma rota, permitindo acesso apenas a usuários com role 'admin'."""
     def wrapper(fn):
         @wraps(fn)
         def decorator(*args, **kwargs):
@@ -45,32 +41,23 @@ def admin_required():
                 return jsonify(msg="Acesso restrito a administradores!"), 403
         return decorator
     return wrapper
-# --- FIM DO DECORADOR ---
 
-
-# --- ROTA DE LOGIN (ATUALIZADA) ---
+# --- ROTA DE LOGIN (mantida) ---
 @app.route('/login', methods=['POST'])
 def login_endpoint():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
-
     user = database.buscar_usuario_por_nome(username)
     
-    # Verifica se o usuário existe e se a senha está correta
     if user and check_password_hash(user['password_hash'], password):
-        # Cria o token de acesso
         access_token = create_access_token(identity=username)
-        # Retorna o token E a permissão (role) do usuário
         return jsonify(access_token=access_token, role=user.get('role', 'user'))
     
     return jsonify({"msg": "Usuário ou senha inválidos"}), 401
-# --- FIM DA ROTA DE LOGIN ---
 
-
-# --- ROTAS DE ITENS (ADMIN E USUÁRIO) ---
-
-# Rota para buscar a lista mestre de itens (acessível por todos os usuários logados)
+# --- ROTAS DE ITENS E PREFERÊNCIAS (mantidas) ---
+# (As rotas /itens-relevantes e /preferencias-usuario continuam as mesmas)
 @app.route('/itens-relevantes', methods=['GET'])
 @jwt_required()
 def get_itens_relevantes():
@@ -80,10 +67,9 @@ def get_itens_relevantes():
     except Exception as e:
         return jsonify({"error": f"Erro: {e}"}), 500
 
-# Rota para ADMIN salvar/atualizar a lista mestre de itens
 @app.route('/itens-relevantes', methods=['POST'])
 @jwt_required()
-@admin_required() # <-- Apenas admins podem acessar
+@admin_required()
 def post_itens_relevantes():
     try:
         data = request.get_json()
@@ -93,144 +79,171 @@ def post_itens_relevantes():
     except Exception as e:
         return jsonify({"error": f"Erro: {e}"}), 500
 
-# NOVA Rota para um USUÁRIO obter a lista de itens com SUAS preferências
 @app.route('/preferencias-usuario', methods=['GET'])
 @jwt_required()
 def get_user_preferences():
     try:
         current_username = get_jwt_identity()
         user = database.buscar_usuario_por_nome(current_username)
-        if not user:
-            return jsonify({"msg": "Usuário não encontrado"}), 404
-        
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
         preferences = database.get_itens_com_preferencias_usuario(user['id'])
         return jsonify(preferences)
     except Exception as e:
-        traceback.print_exc()
         return jsonify({"error": f"Erro ao buscar preferências: {e}"}), 500
 
-# NOVA Rota para um USUÁRIO habilitar ou desabilitar um item
 @app.route('/preferencias-usuario', methods=['PUT'])
 @jwt_required()
 def update_user_preference():
     try:
         current_username = get_jwt_identity()
         user = database.buscar_usuario_por_nome(current_username)
-        if not user:
-            return jsonify({"msg": "Usuário não encontrado"}), 404
-        
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
         data = request.get_json()
-        item_id = data.get('item_id')
-        is_enabled = data.get('is_enabled')
-
+        item_id, is_enabled = data.get('item_id'), data.get('is_enabled')
         if item_id is None or not isinstance(is_enabled, bool):
             return jsonify({"msg": "Parâmetros 'item_id' e 'is_enabled' (booleano) são obrigatórios."}), 400
-            
         database.atualizar_preferencia_usuario(user['id'], item_id, is_enabled)
         return jsonify({"success": True})
     except Exception as e:
-        traceback.print_exc()
         return jsonify({"error": f"Erro ao atualizar preferência: {e}"}), 500
-
-# --- ROTAS DE PROCESSOS E RPA (sem alterações de lógica) ---
-
-@app.route('/add-and-run', methods=['POST'])
-@jwt_required()
-def add_and_run_endpoint():
-    try:
-        data = request.get_json()
-        processos_com_dados = data['processos']
-        database.adicionar_processos_para_monitorar(processos_com_dados)
-        numeros_processo = [item['numero'] for item in processos_com_dados]
-        main.executar_rpa(numeros_processo)
-        dados_painel = database.buscar_painel_dados()
-        return jsonify(dados_painel)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": f"Erro: {e}"}), 500
-    
-# --- NOVAS ROTAS PARA GERENCIAMENTO DE USUÁRIOS (Admin) ---
-
+        
+# --- ROTAS DE USUÁRIOS (Admin - mantidas) ---
 @app.route('/users', methods=['GET'])
 @jwt_required()
 @admin_required()
 def get_all_users():
-    """Retorna uma lista de todos os usuários (sem as senhas)."""
-    try:
-        users = database.listar_todos_usuarios()
-        return jsonify(users)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": f"Erro ao buscar usuários: {e}"}), 500
+    users = database.listar_todos_usuarios()
+    return jsonify(users)
 
 @app.route('/users', methods=['POST'])
 @jwt_required()
 @admin_required()
 def create_user():
-    """Cria um novo usuário."""
     data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    role = data.get('role', 'user') # O padrão é 'user' se não for especificado
-
+    username, password, role = data.get('username'), data.get('password'), data.get('role', 'user')
     if not username or not password:
         return jsonify({"msg": "Nome de usuário e senha são obrigatórios."}), 400
-    
-    # Verifica se o usuário já existe
     if database.buscar_usuario_por_nome(username):
-        return jsonify({"msg": f"O nome de usuário '{username}' já está em uso."}), 409 # 409 Conflict
+        return jsonify({"msg": f"O nome de usuário '{username}' já está em uso."}), 409
+    database.adicionar_usuario(username, password, role)
+    return jsonify({"success": True, "msg": f"Usuário '{username}' criado com sucesso."}), 201
 
-    try:
-        database.adicionar_usuario(username, password, role)
-        return jsonify({"success": True, "msg": f"Usuário '{username}' criado com sucesso."}), 201
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": f"Erro ao criar usuário: {e}"}), 500
+# --- ROTAS DE PROCESSOS E RPA (ATUALIZADAS PARA O NOVO FLUXO) ---
 
-@app.route('/run-monitoring', methods=['POST'])
+@app.route('/add-and-run', methods=['POST'])
 @jwt_required()
-def run_monitoring_endpoint():
+def add_and_run_endpoint():
+    """Associa processos ao usuário logado e roda o RPA para eles."""
     try:
-        processos_para_rodar = database.buscar_processos_em_monitoramento()
-        if not processos_para_rodar:
-            dados_painel = database.buscar_painel_dados()
-            return jsonify(dados_painel)
-        main.executar_rpa(processos_para_rodar)
-        dados_painel = database.buscar_painel_dados()
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
+
+        data = request.get_json()
+        processos_com_dados = data['processos']
+        
+        # Nova função que associa os processos ao usuário
+        database.associar_processos_usuario(user['id'], processos_com_dados)
+        
+        numeros_processo = [item['numero'] for item in processos_com_dados]
+        # O RPA agora usa a nova função de atualização, mais inteligente
+        main.executar_rpa(numeros_processo, database.atualizar_status_para_usuarios)
+        
+        # Retorna o painel ATUALIZADO para este usuário
+        dados_painel = database.buscar_painel_usuario(user['id'])
         return jsonify(dados_painel)
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Erro: {e}"}), 500
 
-@app.route('/arquivar-processo', methods=['POST'])
+@app.route('/run-monitoring', methods=['POST'])
 @jwt_required()
-def arquivar_processo_endpoint():
+def run_monitoring_endpoint():
+    """Roda o monitoramento para todos os processos que algum usuário esteja monitorando."""
     try:
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
+        
+        # Nova função que busca todos os processos que precisam ser verificados no geral
+        processos_para_rodar = database.buscar_processos_em_monitoramento_geral()
+        
+        if processos_para_rodar:
+            main.executar_rpa(processos_para_rodar, database.atualizar_status_para_usuarios)
+        
+        # Retorna o painel com a visão do usuário que clicou no botão
+        dados_painel = database.buscar_painel_usuario(user['id'])
+        return jsonify(dados_painel)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro: {e}"}), 500
+
+@app.route('/dar-ciencia', methods=['POST']) # Rota renomeada
+@jwt_required()
+def dar_ciencia_endpoint():
+    """Marca um processo como 'arquivado' na visão do usuário logado."""
+    try:
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
+        
         data = request.get_json()
         numero_processo = data['numero_processo']
-        database.marcar_como_arquivado(numero_processo)
+        
+        # Nova função que arquiva a visualização para o usuário específico
+        database.marcar_ciencia_usuario(user['id'], numero_processo)
+        
         return jsonify({"success": True})
     except Exception as e:
-        return jsonify({"error": f"Erro ao arquivar: {e}"}), 500
+        return jsonify({"error": f"Erro ao dar ciência: {e}"}), 500
 
 @app.route('/painel', methods=['GET'])
 @jwt_required()
 def get_painel_endpoint():
-    dados_painel = database.buscar_painel_dados()
-    return jsonify(dados_painel)
+    """Busca os dados do painel para o usuário logado."""
+    try:
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
+        
+        # Nova função que busca o painel específico do usuário
+        dados_painel = database.buscar_painel_usuario(user['id'])
+        return jsonify(dados_painel)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro: {e}"}), 500
+
 
 @app.route('/historico', methods=['GET'])
 @jwt_required()
 def get_historico_endpoint():
-    historico = database.buscar_historico_arquivado()
-    return jsonify(historico)
+    """Busca o histórico de processos para o usuário logado."""
+    try:
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
+        
+        # Nova função que busca o histórico específico do usuário
+        historico = database.buscar_historico_usuario(user['id'])
+        return jsonify(historico)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro: {e}"}), 500
     
 @app.route('/export-excel', methods=['GET'])
 @jwt_required()
 def export_excel_endpoint():
+    """Exporta para Excel a visão do painel e histórico do usuário logado."""
     try:
-        dados_painel = database.buscar_painel_dados()
-        dados_historico = database.buscar_historico_arquivado()
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user: return jsonify({"msg": "Usuário não encontrado"}), 404
+        
+        # Busca os dados específicos do usuário
+        dados_painel = database.buscar_painel_usuario(user['id'])
+        dados_historico = database.buscar_historico_usuario(user['id'])
+        
+        # (O resto da lógica de criação do Excel permanece a mesma)
         workbook = Workbook()
         sheet_painel = workbook.active
         sheet_painel.title = "Painel de Controle"
@@ -250,13 +263,13 @@ def export_excel_endpoint():
                     processo['id'], processo['responsavel_principal'], processo['numero_processo'],
                     processo['classificacao'], processo['data_ultima_atualizacao']
                 ])
+        
         excel_buffer = BytesIO()
         workbook.save(excel_buffer)
         excel_buffer.seek(0)
         return send_file(
-            excel_buffer,
-            as_attachment=True,
-            download_name='onesid_export.xlsx',
+            excel_buffer, as_attachment=True,
+            download_name=f'onesid_export_{current_username}.xlsx',
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
     except Exception as e:

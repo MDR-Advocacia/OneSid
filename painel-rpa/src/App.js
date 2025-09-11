@@ -47,7 +47,6 @@ const Modal = ({ processo, onClose }) => {
     );
 };
 
-// --- MODAL DE CONFIGURAÇÕES COM ABAS ---
 const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
     const [activeTab, setActiveTab] = useState('itens');
 
@@ -106,10 +105,7 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
 
     }, [fetchWithAuth, userRole, activeTab]);
 
-    // --- Funções da Aba de ITENS ---
-    // ################### AQUI ESTÁ A CORREÇÃO ###################
     const handleAddItem = () => { if (novoItem && !itens.includes(novoItem.trim())) setItens([...itens, novoItem.trim()]); setNovoItem(''); };
-    // ###########################################################
     const handleRemoveItem = (itemToRemove) => setItens(itens.filter(item => item !== itemToRemove));
     const handleSaveAdminItems = async () => {
         try {
@@ -240,7 +236,7 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
     );
 };
 
-// --- SEU COMPONENTE DASHBOARD (sem alterações) ---
+// --- COMPONENTE DASHBOARD (ATUALIZADO) ---
 const Dashboard = ({ token, onLogout, userRole }) => {
     const [processInput, setProcessInput] = useState('');
     const [panelList, setPanelList] = useState([]);
@@ -266,6 +262,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
 
     const fetchData = useCallback(async () => {
         try {
+            // As rotas /painel e /historico agora retornam dados personalizados pelo backend
             const panelResponse = await fetchWithAuth(`${API_BASE_URL}/painel`);
             const panelData = await panelResponse.json();
             setPanelList(Array.isArray(panelData) ? panelData : []);
@@ -303,7 +300,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
         }
 
         setIsLoading(true);
-        setMessage('Adicionando e consultando novos processos...');
+        setMessage('Adicionando e consultando seus novos processos...');
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/add-and-run`, {
                 method: 'POST',
@@ -311,8 +308,12 @@ const Dashboard = ({ token, onLogout, userRole }) => {
                 body: JSON.stringify({ processos: processosParaEnviar }),
             });
             if (!response.ok) throw new Error('Falha ao submeter novos processos.');
-            await fetchData();
-            setMessage('Novos processos consultados com sucesso!');
+            
+            // A API já retorna o painel atualizado do usuário
+            const updatedPanelData = await response.json();
+            setPanelList(Array.isArray(updatedPanelData) ? updatedPanelData : []);
+            
+            setMessage('Seus processos foram consultados com sucesso!');
             setProcessInput('');
         } catch (error) {
             setMessage('Erro ao consultar novos processos.');
@@ -320,44 +321,56 @@ const Dashboard = ({ token, onLogout, userRole }) => {
             setIsLoading(false);
         }
     };
+    
     const handleRunMonitoring = async () => {
         setIsLoading(true);
-        setMessage('Iniciando monitoramento dos processos pendentes...');
+        setMessage('Iniciando monitoramento geral...');
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/run-monitoring`, { method: 'POST' });
             if (!response.ok) throw new Error('Falha ao rodar monitoramento.');
-            await fetchData();
-            setMessage('Monitoramento finalizado com sucesso!');
+            
+            // A API retorna a sua visão atualizada do painel
+            const updatedPanelData = await response.json();
+            setPanelList(Array.isArray(updatedPanelData) ? updatedPanelData : []);
+            
+            setMessage('Monitoramento finalizado!');
         } catch (error) {
             setMessage('Erro durante o monitoramento.');
         } finally {
             setIsLoading(false);
         }
     };
-    const handleArchiveProcess = async (numero_processo) => {
+    
+    // ==================================================================
+    //               MUDANÇA PRINCIPAL AQUI
+    // ==================================================================
+    const handleDarCiencia = async (numero_processo) => {
         try {
-            setMessage(`Arquivando processo ${numero_processo}...`);
-            const response = await fetchWithAuth(`${API_BASE_URL}/arquivar-processo`, {
+            setMessage(`Dando ciência no processo ${numero_processo}...`);
+            const response = await fetchWithAuth(`${API_BASE_URL}/dar-ciencia`, { // Nova rota
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ numero_processo: numero_processo }),
             });
-            if (!response.ok) throw new Error('Falha ao arquivar processo.');
-            await fetchData();
-            setMessage(`Processo ${numero_processo} arquivado com sucesso!`);
+            if (!response.ok) throw new Error('Falha ao dar ciência no processo.');
+            
+            // Apenas remove o processo da lista local para uma atualização visual instantânea
+            setPanelList(prevList => prevList.filter(p => p.numero_processo !== numero_processo));
+            
+            setMessage(`Processo ${numero_processo} arquivado da sua visão.`);
         } catch (error) {
-            console.error("Erro ao arquivar:", error);
-            setMessage('Erro ao arquivar o processo.');
+            console.error("Erro ao dar ciência:", error);
+            setMessage('Erro ao dar ciência no processo.');
         }
     };
+    // ==================================================================
+    
     const handleExport = async () => {
-        setMessage('Gerando planilha...');
+        setMessage('Gerando sua planilha...');
         setIsLoading(true);
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/export-excel`);
-            if (!response.ok) {
-                throw new Error('Falha ao gerar o arquivo no servidor.');
-            }
+            if (!response.ok) throw new Error('Falha ao gerar o arquivo no servidor.');
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -367,7 +380,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
             a.click();
             a.remove();
             window.URL.revokeObjectURL(url);
-            setMessage('Planilha exportada com sucesso!');
+            setMessage('Sua planilha foi exportada com sucesso!');
         } catch (error) {
             console.error("Erro ao exportar:", error);
             setMessage('Erro ao exportar a planilha.');
@@ -375,6 +388,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
             setIsLoading(false);
         }
     };
+    
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFilters(prevFilters => ({ ...prevFilters, [name]: value }));
@@ -388,7 +402,6 @@ const Dashboard = ({ token, onLogout, userRole }) => {
         setSortConfig({ key, direction });
         setCurrentPage(1);
     };
-
     const getSortIcon = (name) => {
         if (sortConfig.key !== name) return null;
         return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
@@ -484,14 +497,16 @@ const Dashboard = ({ token, onLogout, userRole }) => {
                                             <td>{proc.responsavel_principal}</td>
                                             <td><button className="link-button" onClick={() => setModalProcess(proc)}>{proc.numero_processo}</button></td>
                                             <td>{proc.classificacao}</td>
-                                            <td><span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>{proc.status_geral}</span></td>
+                                            {/* O status agora é 'status_visualizacao', mas mantivemos o nome 'status_geral' no backend para compatibilidade */}
+                                            <td><span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>{proc.status_geral === 'pendente_ciencia' ? 'Pendente Ciência' : 'Monitorando'}</span></td>
                                             <td>{new Date(proc.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
-                                            <td>{proc.status_geral === 'Pendente Ciencia' && (<button className="archive-button" onClick={() => handleArchiveProcess(proc.numero_processo)}>Dar Ciência</button>)}</td>
+                                            {/* A ação agora chama a nova função handleDarCiencia */}
+                                            <td>{proc.status_geral === 'pendente_ciencia' && (<button className="archive-button" onClick={() => handleDarCiencia(proc.numero_processo)}>Dar Ciência</button>)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
-                        ) : <p>Nenhum processo encontrado com os filtros aplicados.</p>}
+                        ) : <p>Nenhum processo em seu painel. Adicione novos processos para começar.</p>}
                     </div>
                     <div className="results-section">
                         <h2>Histórico de Processos Arquivados</h2>
@@ -510,7 +525,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
                                     ))}
                                 </tbody>
                             </table>
-                        ) : <p>Nenhum processo no histórico.</p>}
+                        ) : <p>Nenhum processo no seu histórico.</p>}
                     </div>
                 </main>
             </div>
@@ -518,7 +533,6 @@ const Dashboard = ({ token, onLogout, userRole }) => {
     );
 };
 
-// --- SEU COMPONENTE APP (sem alterações) ---
 function App() {
     const [token, setToken] = useState(localStorage.getItem('user_token'));
     const [userRole, setUserRole] = useState(localStorage.getItem('user_role'));

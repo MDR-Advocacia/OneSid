@@ -3,26 +3,23 @@ import datetime
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Usando o nome do seu banco de dados
 DB_NAME = 'rpa_dados.db'
 
-# --- Funções Auxiliares ---
+# --- Funções Auxiliares (Mantidas) ---
 def _limpar_numero(numero_processo_bruto: str) -> str:
-    """Remove todos os caracteres não numéricos de uma string."""
     return re.sub(r'\D', '', numero_processo_bruto)
 
-# --- Estrutura do Banco de Dados ---
+# --- Estrutura do Banco de Dados (Atualizada) ---
 def inicializar_banco():
-    """Cria ou atualiza as tabelas do banco de dados com a nova estrutura de permissões."""
+    """Cria ou atualiza as tabelas do banco, incluindo a nova tabela de visualização por usuário."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # Tabela 1: Processos (Sua estrutura original mantida)
+    # Tabela 1: Processos (sem 'status_geral', pois agora é por usuário)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero_processo TEXT UNIQUE,
-            status_geral TEXT,
             data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             data_ultima_atualizacao TIMESTAMP,
             responsavel_principal TEXT,
@@ -30,7 +27,7 @@ def inicializar_banco():
         )
     ''')
     
-    # Tabela 2: Subsídios (Sua estrutura original mantida)
+    # Tabela 2: Subsídios (Mantida)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS subsidios_atuais (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +39,7 @@ def inicializar_banco():
         )
     ''')
     
-    # Tabela 3: Itens Relevantes (Sua estrutura original mantida)
+    # Tabela 3: Itens Relevantes (Mantida)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS itens_relevantes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,68 +47,72 @@ def inicializar_banco():
         )
     ''')
 
-    # Tabela 4: Usuários (ATUALIZADA com a coluna 'role')
+    # Tabela 4: Usuários (Mantida)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user' -- 'user' ou 'admin'
+            role TEXT NOT NULL DEFAULT 'user'
         )
     ''')
 
-    # NOVA Tabela 5: Preferências de itens por usuário
+    # Tabela 5: Preferências de Itens por Usuário (Mantida)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_item_preferences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             item_id INTEGER NOT NULL,
-            is_enabled BOOLEAN NOT NULL DEFAULT 1, -- 1 para true, 0 para false
+            is_enabled BOOLEAN NOT NULL DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
             FOREIGN KEY (item_id) REFERENCES itens_relevantes (id) ON DELETE CASCADE,
             UNIQUE(user_id, item_id)
         )
     ''')
 
-    # Garante que o usuário admin padrão exista com a permissão correta
+    # !! NOVA TABELA CENTRAL !!
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_process_view (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            process_id INTEGER NOT NULL,
+            status_visualizacao TEXT NOT NULL, -- 'monitorando', 'pendente_ciencia', 'arquivado'
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+            FOREIGN KEY (process_id) REFERENCES processos (id) ON DELETE CASCADE,
+            UNIQUE(user_id, process_id)
+        )
+    ''')
+
+    conn.commit()
+    
+    # Garante usuários padrão (lógica ajustada para evitar erro se a tabela já existir)
     cursor.execute("SELECT * FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
         adicionar_usuario('admin', 'admin', role='admin')
     
-    # Adiciona o usuário padrão 'mdr' se ele não existir
     cursor.execute("SELECT * FROM users WHERE username = 'mdr'")
     if not cursor.fetchone():
         adicionar_usuario("mdr", "mdr.123")
 
-
-    conn.commit()
     conn.close()
-    print("✔️ Banco de dados (re)inicializado com a estrutura de permissões.")
+    print("✔️ Banco de dados (re)inicializado com a estrutura de visualização por usuário.")
 
-# --- Funções de Usuários e Permissões (Atualizadas) ---
-
+# --- Funções de Usuários e Permissões (Mantidas) ---
 def adicionar_usuario(username, password, role='user'):
-    """Adiciona um novo usuário ao banco com senha criptografada e uma permissão (role)."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     password_hash = generate_password_hash(password)
     try:
         cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", (username, password_hash, role))
         conn.commit()
-        print(f"✔️ Usuário '{username}' com permissão '{role}' criado com sucesso.")
     except sqlite3.IntegrityError:
-        # Se o usuário já existe, podemos garantir que a permissão de admin seja atualizada
         if role == 'admin':
             cursor.execute("UPDATE users SET role = ? WHERE username = ?", (role, username))
             conn.commit()
-            print(f"✔️ Permissão do usuário '{username}' atualizada para 'admin'.")
-        else:
-            print(f"⚠️ Usuário '{username}' já existe.")
     finally:
         conn.close()
 
 def buscar_usuario_por_nome(username):
-    """Busca um usuário pelo nome e retorna seus dados, incluindo a 'role'."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -120,144 +121,184 @@ def buscar_usuario_por_nome(username):
     conn.close()
     return dict(user) if user else None
 
-# --- Funções de Processos e Subsídios (Sua lógica original mantida) ---
+def listar_todos_usuarios():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, role FROM users ORDER BY username")
+    usuarios = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return usuarios
 
-def adicionar_processos_para_monitorar(processos_com_dados: list):
-    """Adiciona uma lista de processos ou atualiza dados se já existir."""
+# --- NOVAS Funções de Processo Centradas no Usuário ---
+
+def associar_processos_usuario(user_id: int, processos_com_dados: list):
+    """
+    Associa uma lista de processos a um usuário, criando o processo se não existir.
+    Se a associação já existe e está 'arquivado', reativa para 'monitorando'.
+    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     agora = datetime.datetime.now()
-
+    
     for processo_info in processos_com_dados:
         numero_limpo = _limpar_numero(processo_info['numero'])
+        
+        # Garante que o processo exista na tabela principal 'processos'
+        cursor.execute("SELECT id FROM processos WHERE numero_processo = ?", (numero_limpo,))
+        processo_existente = cursor.fetchone()
+        
+        if processo_existente:
+            process_id = processo_existente[0]
+            # Atualiza os dados do processo caso tenham mudado na planilha
+            cursor.execute("UPDATE processos SET responsavel_principal = ?, classificacao = ? WHERE id = ?",
+                           (processo_info['responsavel'], processo_info['classificacao'], process_id))
+        else:
+            cursor.execute(
+                "INSERT INTO processos (numero_processo, responsavel_principal, classificacao, data_ultima_atualizacao) VALUES (?, ?, ?, ?)",
+                (numero_limpo, processo_info['responsavel'], processo_info['classificacao'], agora)
+            )
+            process_id = cursor.lastrowid
+
+        # Cria ou reativa a associação na tabela de visualização
         cursor.execute(
             """
-            INSERT INTO processos (numero_processo, responsavel_principal, classificacao, status_geral, data_ultima_atualizacao)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(numero_processo) DO UPDATE SET
-                responsavel_principal = excluded.responsavel_principal,
-                classificacao = excluded.classificacao;
+            INSERT INTO user_process_view (user_id, process_id, status_visualizacao)
+            VALUES (?, ?, 'monitorando')
+            ON CONFLICT(user_id, process_id) DO UPDATE SET
+                status_visualizacao = 'monitorando';
             """,
-            (numero_limpo, processo_info['responsavel'], processo_info['classificacao'], 'Em Monitoramento', agora)
+            (user_id, process_id)
         )
+    
     conn.commit()
     conn.close()
-    print(f"✔️ {len(processos_com_dados)} processos adicionados/atualizados para monitoramento.")
 
-
-def atualizar_status_processo(numero_processo: str, lista_subsidios: list):
+def atualizar_status_para_usuarios(numero_processo: str, lista_subsidios: list):
     """
-    Atualiza o status de um processo com base nos subsídios e na lista de itens relevantes.
-    Esta é a versão unificada e corrigida.
+    Atualiza subsídios e, para CADA usuário monitorando o processo, verifica
+    se os SEUS itens relevantes foram concluídos para mudar o status para 'pendente_ciencia'.
     """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     agora = datetime.datetime.now()
     numero_processo_limpo = _limpar_numero(numero_processo)
 
-    # 1. Salva todos os subsídios encontrados
+    # 1. Atualiza a tabela central de subsídios e a data do processo
     for subsidio in lista_subsidios:
         cursor.execute(
-            """
-            INSERT INTO subsidios_atuais (numero_processo, item, status, data_atualizacao)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(numero_processo, item) DO UPDATE SET
-                status = excluded.status,
-                data_atualizacao = excluded.data_atualizacao;
-            """,
+            "INSERT INTO subsidios_atuais (numero_processo, item, status, data_atualizacao) VALUES (?, ?, ?, ?) ON CONFLICT(numero_processo, item) DO UPDATE SET status=excluded.status, data_atualizacao=excluded.data_atualizacao",
             (numero_processo_limpo, subsidio['item'], subsidio['status'], agora)
         )
+    cursor.execute("UPDATE processos SET data_ultima_atualizacao = ? WHERE numero_processo = ?", (agora, numero_processo_limpo))
+    conn.commit()
     
-    # 2. Busca a lista mestre de itens relevantes
-    cursor.execute("SELECT item_nome FROM itens_relevantes")
-    itens_relevantes_set = {row[0] for row in cursor.fetchall()}
-    print(f"   - Itens relevantes para verificação: {itens_relevantes_set}")
+    # 2. Obtém o ID do processo
+    cursor.execute("SELECT id FROM processos WHERE numero_processo = ?", (numero_processo_limpo,))
+    process_row = cursor.fetchone()
+    if not process_row: return
+    process_id = process_row[0]
 
-    def is_concluido(status_str):
-        status_lower = status_str.lower()
-        return status_lower == 'concluído' or status_lower == 'concluido'
+    # 3. Itera sobre cada usuário que está ativamente monitorando este processo
+    cursor.execute("SELECT user_id FROM user_process_view WHERE process_id = ? AND status_visualizacao = 'monitorando'", (process_id,))
+    user_ids_monitorando = [row[0] for row in cursor.fetchall()]
 
-    # 3. Lógica de atualização de status
-    status_geral_novo = 'Em Monitoramento'
-    if itens_relevantes_set:
-        subsidios_concluidos_encontrados = {s['item'] for s in lista_subsidios if is_concluido(s['status'])}
-        
-        # Verifica se o conjunto de itens relevantes é um subconjunto dos concluídos
-        if itens_relevantes_set.issubset(subsidios_concluidos_encontrados):
-            print(f"   - Todos os {len(itens_relevantes_set)} subsídios relevantes estão concluídos. Marcando como pendente.")
-            status_geral_novo = 'Pendente Ciencia'
+    subsidios_concluidos_encontrados = {s['item'] for s in lista_subsidios if s['status'].lower() in ('concluído', 'concluido')}
 
-    # 4. Atualiza o status do processo
-    cursor.execute(
-        "UPDATE processos SET status_geral = ?, data_ultima_atualizacao = ? WHERE numero_processo = ?",
-        (status_geral_novo, agora, numero_processo_limpo)
-    )
-    
+    for user_id in user_ids_monitorando:
+        # 4. Para cada usuário, busca SUAS preferências de itens habilitados
+        cursor.execute("""
+            SELECT ir.item_nome FROM user_item_preferences uip
+            JOIN itens_relevantes ir ON uip.item_id = ir.id
+            WHERE uip.user_id = ? AND uip.is_enabled = 1
+        """, (user_id,))
+        itens_relevantes_usuario = {row[0] for row in cursor.fetchall()}
+
+        # 5. Se o usuário definiu itens relevantes E todos eles estão na lista de concluídos, muda o status
+        if itens_relevantes_usuario and itens_relevantes_usuario.issubset(subsidios_concluidos_encontrados):
+            cursor.execute(
+                "UPDATE user_process_view SET status_visualizacao = 'pendente_ciencia' WHERE user_id = ? AND process_id = ?",
+                (user_id, process_id)
+            )
+            print(f"  -> Processo {numero_processo_limpo} agora está 'Pendente Ciência' para o usuário ID {user_id}.")
+
     conn.commit()
     conn.close()
-    print(f"✔️ Status do processo {numero_processo_limpo} atualizado para: {status_geral_novo}")
 
-
-def marcar_como_arquivado(numero_processo: str):
-    """Muda o status de um processo para 'Arquivado'."""
+def marcar_ciencia_usuario(user_id: int, numero_processo: str):
+    """Muda o status de visualização de um processo para 'arquivado' para um usuário específico."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    agora = datetime.datetime.now()
     numero_processo_limpo = _limpar_numero(numero_processo)
-    cursor.execute(
-        "UPDATE processos SET status_geral = ?, data_ultima_atualizacao = ? WHERE numero_processo = ?",
-        ('Arquivado', agora, numero_processo_limpo)
-    )
+    
+    cursor.execute("""
+        UPDATE user_process_view
+        SET status_visualizacao = 'arquivado'
+        WHERE user_id = ? AND process_id = (SELECT id FROM processos WHERE numero_processo = ?)
+    """, (user_id, numero_processo_limpo))
+    
     conn.commit()
     conn.close()
-    print(f"✔️ Processo {numero_processo_limpo} movido para o histórico (Arquivado).")
 
-def buscar_painel_dados():
-    """Busca os processos ativos e seus subsídios para o painel."""
+def buscar_painel_usuario(user_id: int):
+    """Busca os processos ativos (monitorando ou pendente) APENAS para o usuário especificado."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    cursor.execute(
-        "SELECT id, numero_processo, responsavel_principal, classificacao, status_geral, data_ultima_atualizacao FROM processos WHERE status_geral != 'Arquivado' ORDER BY data_ultima_atualizacao DESC"
-    )
+    cursor.execute("""
+        SELECT
+            p.id, p.numero_processo, p.responsavel_principal, p.classificacao, p.data_ultima_atualizacao,
+            v.status_visualizacao AS status_geral -- Renomeia para 'status_geral' para manter compatibilidade com frontend
+        FROM processos p
+        JOIN user_process_view v ON p.id = v.process_id
+        WHERE v.user_id = ? AND v.status_visualizacao IN ('monitorando', 'pendente_ciencia')
+        ORDER BY p.data_ultima_atualizacao DESC
+    """, (user_id,))
+    
     dados_painel = [dict(row) for row in cursor.fetchall()]
     
     for processo in dados_painel:
-        cursor.execute(
-            "SELECT item, status FROM subsidios_atuais WHERE numero_processo = ? ORDER BY id",
-            (processo['numero_processo'],)
-        )
+        cursor.execute( "SELECT item, status FROM subsidios_atuais WHERE numero_processo = ? ORDER BY id", (processo['numero_processo'],))
         processo['subsidios'] = [dict(row) for row in cursor.fetchall()]
     
     conn.close()
     return dados_painel
 
-def buscar_processos_em_monitoramento() -> list:
-    """Retorna a lista de números de processos 'Em Monitoramento'."""
+def buscar_processos_em_monitoramento_geral() -> list:
+    """Busca todos os processos que estão sendo monitorados por PELO MENOS UM usuário."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT numero_processo FROM processos WHERE status_geral = 'Em Monitoramento'")
+    cursor.execute("""
+        SELECT DISTINCT p.numero_processo
+        FROM processos p
+        JOIN user_process_view v ON p.id = v.process_id
+        WHERE v.status_visualizacao = 'monitorando'
+    """)
     processos = [row[0] for row in cursor.fetchall()]
     conn.close()
     return processos
 
-def buscar_historico_arquivado():
-    """Busca todos os processos com status 'Arquivado'."""
+def buscar_historico_usuario(user_id: int):
+    """Busca o histórico de processos arquivados APENAS para o usuário especificado."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, numero_processo, responsavel_principal, classificacao, data_ultima_atualizacao FROM processos WHERE status_geral = 'Arquivado' ORDER BY data_ultima_atualizacao DESC"
-    )
+    
+    cursor.execute("""
+        SELECT p.id, p.numero_processo, p.responsavel_principal, p.classificacao, p.data_ultima_atualizacao
+        FROM processos p
+        JOIN user_process_view v ON p.id = v.process_id
+        WHERE v.user_id = ? AND v.status_visualizacao = 'arquivado'
+        ORDER BY p.data_ultima_atualizacao DESC
+    """, (user_id,))
+    
     historico = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return historico
 
-# --- Funções de Itens Relevantes (Sua lógica, mas adaptada para o modelo Admin) ---
-
+# --- Funções de Itens e Preferências (Mantidas) ---
 def buscar_itens_relevantes():
-    """Busca a lista de todos os itens relevantes (agora gerenciada pelo admin)."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -267,7 +308,6 @@ def buscar_itens_relevantes():
     return itens
 
 def salvar_itens_relevantes(itens: list):
-    """Apaga a lista antiga e salva a nova lista de itens relevantes (ação de admin)."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
@@ -276,54 +316,25 @@ def salvar_itens_relevantes(itens: list):
             itens_tuplas = [(item.strip(),) for item in itens if item.strip()]
             cursor.executemany("INSERT INTO itens_relevantes (item_nome) VALUES (?)", itens_tuplas)
         conn.commit()
-        print(f"✔️ Lista de itens relevantes salva com {len(itens)} itens.")
-    except Exception as e:
-        conn.rollback()
-        print(f"❌ Erro ao salvar itens relevantes: {e}")
     finally:
         conn.close()
 
-# --- NOVAS Funções para Preferências de Itens (Usuário) ---
-
 def get_itens_com_preferencias_usuario(user_id: int):
-    """Retorna a lista de itens com as preferências de um usuário específico."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    # Garante que o usuário tenha uma entrada de preferência para todos os itens existentes
-    cursor.execute('''
-        INSERT OR IGNORE INTO user_item_preferences (user_id, item_id)
-        SELECT ?, id FROM itens_relevantes
-        WHERE id NOT IN (SELECT item_id FROM user_item_preferences WHERE user_id = ?)
-    ''', (user_id, user_id))
+    cursor.execute("INSERT OR IGNORE INTO user_item_preferences (user_id, item_id) SELECT ?, id FROM itens_relevantes WHERE id NOT IN (SELECT item_id FROM user_item_preferences WHERE user_id = ?)", (user_id, user_id))
     conn.commit()
-
-    # Busca todos os itens, juntando com a preferência do usuário
-    cursor.execute('''
-        SELECT ir.id, ir.item_nome, uip.is_enabled
-        FROM itens_relevantes ir
-        JOIN user_item_preferences uip ON ir.id = uip.item_id
-        WHERE uip.user_id = ?
-    ''', (user_id,))
-    
+    cursor.execute("SELECT ir.id, ir.item_nome, uip.is_enabled FROM itens_relevantes ir JOIN user_item_preferences uip ON ir.id = uip.item_id WHERE uip.user_id = ?", (user_id,))
     itens = [{'id': row[0], 'item_nome': row[1], 'is_enabled': bool(row[2])} for row in cursor.fetchall()]
     conn.close()
     return itens
 
 def atualizar_preferencia_usuario(user_id: int, item_id: int, is_enabled: bool):
-    """Atualiza a preferência (habilitar/desabilitar) de um usuário para um item."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE user_item_preferences
-        SET is_enabled = ?
-        WHERE user_id = ? AND item_id = ?
-    ''', (1 if is_enabled else 0, user_id, item_id))
+    cursor.execute("UPDATE user_item_preferences SET is_enabled = ? WHERE user_id = ? AND item_id = ?", (1 if is_enabled else 0, user_id, item_id))
     conn.commit()
     conn.close()
 
-
-# --- Bloco de Execução Principal ---
 if __name__ == '__main__':
-    # Executa a inicialização para garantir que o schema esteja atualizado
     inicializar_banco()
