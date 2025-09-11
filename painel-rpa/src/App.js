@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'; // 1. Importe o useCallback
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import LoginPage from './LoginPage';
 import './App.css';
 import logo from './assets/logo-onesid.png';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
-
+// --- SEUS COMPONENTES DE MODAL EXISTENTES (sem alterações) ---
 const Modal = ({ processo, onClose }) => {
     if (!processo) return null;
     const temSubsidiosEncontrados = processo.subsidios && processo.subsidios.length > 0;
@@ -37,7 +37,7 @@ const Modal = ({ processo, onClose }) => {
                             </tbody>
                         </table>
                     </>
-                ) : <p>Nenhum subsídio encontrado para esta processo na última consulta.</p>}
+                ) : <p>Nenhum subsídio encontrado para este processo na última consulta.</p>}
                 {!temSubsidiosPendentes && temSubsidiosEncontrados && (
                     <p className="feedback-message">Todos os itens relevantes foram encontrados para este processo.</p>
                 )}
@@ -47,13 +47,15 @@ const Modal = ({ processo, onClose }) => {
     );
 };
 
-const ItensRelevantesModal = ({ onClose, token, onAuthError }) => {
+// --- NOVO MODAL DE CONFIGURAÇÕES (Substitui o ItensRelevantesModal) ---
+const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
     const [itens, setItens] = useState([]);
-    const [novoItem, setNovoItem] = useState('');
+    const [novoItem, setNovoItem] = useState(''); // Usado apenas por admin
     const [status, setStatus] = useState('Carregando...');
+    const [error, setError] = useState('');
 
     const fetchWithAuth = useCallback(async (url, options = {}) => {
-        const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+        const headers = { 'Content-Type': 'application/json', ...options.headers, 'Authorization': `Bearer ${token}` };
         const response = await fetch(url, { ...options, headers });
         if (response.status === 401) {
             onAuthError();
@@ -62,24 +64,35 @@ const ItensRelevantesModal = ({ onClose, token, onAuthError }) => {
         return response;
     }, [token, onAuthError]);
 
-
+    // Carrega os dados corretos com base na permissão do usuário
     useEffect(() => {
-        const fetchItens = async () => {
+        const fetchData = async () => {
             try {
                 setStatus('Carregando...');
-                const response = await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`);
-                const data = await response.json();
-                if (Array.isArray(data)) {
-                    setItens(data.map(item => item.item_nome));
+                setError('');
+                if (userRole === 'admin') {
+                    const response = await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`);
+                    const data = await response.json();
+                    if (Array.isArray(data)) {
+                        setItens(data.map(item => item.item_nome)); // Admin usa lista de strings
+                    }
+                } else {
+                    const response = await fetchWithAuth(`${API_BASE_URL}/preferencias-usuario`);
+                    const data = await response.json(); // Usuário usa lista de objetos
+                    if (Array.isArray(data)) {
+                        setItens(data);
+                    }
                 }
                 setStatus('');
             } catch (e) {
-                setStatus('Erro ao carregar itens.');
+                setStatus('Erro ao carregar dados.');
+                setError(e.message);
             }
         };
-        fetchItens();
-    }, [fetchWithAuth]);
+        fetchData();
+    }, [fetchWithAuth, userRole]);
 
+    // --- Funções de Admin ---
     const handleAddItem = () => {
         if (novoItem && !itens.includes(novoItem.trim())) {
             setItens([...itens, novoItem.trim()]);
@@ -89,12 +102,11 @@ const ItensRelevantesModal = ({ onClose, token, onAuthError }) => {
     const handleRemoveItem = (itemToRemove) => {
         setItens(itens.filter(item => item !== itemToRemove));
     };
-    const handleSave = async () => {
+    const handleSaveAdmin = async () => {
         try {
             setStatus('Salvando...');
             await fetchWithAuth(`${API_BASE_URL}/itens-relevantes`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itens: itens }),
             });
             setStatus('Salvo com sucesso!');
@@ -103,38 +115,87 @@ const ItensRelevantesModal = ({ onClose, token, onAuthError }) => {
             setStatus('Erro ao salvar.');
         }
     };
+
+    // --- Função de Usuário ---
+    const handleUserPreferenceChange = async (itemId, isEnabled) => {
+        // Atualiza o estado visualmente primeiro para uma resposta rápida
+        setItens(prevItens => prevItens.map(item =>
+            item.id === itemId ? { ...item, is_enabled: isEnabled } : item
+        ));
+        try {
+            // Envia a atualização para a API
+            await fetchWithAuth(`${API_BASE_URL}/preferencias-usuario`, {
+                method: 'PUT',
+                body: JSON.stringify({ item_id: itemId, is_enabled: isEnabled }),
+            });
+        } catch (error) {
+            setError("Falha ao atualizar preferência. Tente novamente.");
+            // Reverte a mudança se a API falhar
+            setItens(prevItens => prevItens.map(item =>
+                item.id === itemId ? { ...item, is_enabled: !isEnabled } : item
+            ));
+        }
+    };
+
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <h3>Definir Itens Relevantes para Monitoramento</h3>
-                <p>Adicione ou remova os itens que devem ser considerados para mover um processo para "Pendente Ciência".</p>
-                <div className="item-manager">
-                    <div className="item-add-form">
-                        <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
-                        <button onClick={handleAddItem} className="add-button">Adicionar</button>
+                <h3>{userRole === 'admin' ? 'Definir Itens Relevantes' : 'Minhas Preferências de Itens'}</h3>
+                <p>
+                    {userRole === 'admin'
+                        ? 'Adicione ou remova os itens da lista mestra para o monitoramento.'
+                        : 'Habilite ou desabilite os itens que você considera relevantes.'}
+                </p>
+
+                {userRole === 'admin' ? (
+                    // --- Interface do Administrador ---
+                    <div className="item-manager">
+                        <div className="item-add-form">
+                            <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
+                            <button onClick={handleAddItem} className="add-button">Adicionar</button>
+                        </div>
+                        <ul className="item-list">
+                            {itens.length > 0 ? itens.map((item, index) => (
+                                <li key={index}>
+                                    <span>{item}</span>
+                                    <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
+                                </li>
+                            )) : <p>Nenhum item relevante definido.</p>}
+                        </ul>
                     </div>
-                    <ul className="item-list">
-                        {itens.length > 0 ? itens.map((item, index) => (
-                            <li key={index}>
-                                <span>{item}</span>
-                                <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
-                            </li>
-                        )) : <p>Nenhum item relevante definido.</p>}
-                    </ul>
-                </div>
+                ) : (
+                    // --- Interface do Usuário ---
+                    <div className="preferences-list">
+                        {itens.map(item => (
+                            <div key={item.id} className="preference-item">
+                                <span>{item.item_nome}</span>
+                                <label className="toggle-switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={item.is_enabled}
+                                        onChange={(e) => handleUserPreferenceChange(item.id, e.target.checked)}
+                                    />
+                                    <span className="slider"></span>
+                                </label>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {error && <p className="feedback-message error">{error}</p>}
+
                 <div className="modal-actions">
                     <span className="feedback-message">{status}</span>
-                    <button onClick={handleSave} className="primary-button">Salvar e Fechar</button>
-                    <button onClick={onClose} className="secondary-button">Cancelar</button>
+                    {userRole === 'admin' && <button onClick={handleSaveAdmin} className="primary-button">Salvar e Fechar</button>}
+                    <button onClick={onClose} className="secondary-button">{userRole === 'admin' ? 'Cancelar' : 'Fechar'}</button>
                 </div>
             </div>
         </div>
     );
 };
 
-
-// Componente do Painel Principal
-const Dashboard = ({ token, onLogout }) => {
+// --- SEU COMPONENTE DASHBOARD (com pequenas modificações) ---
+const Dashboard = ({ token, onLogout, userRole }) => { // Recebe userRole
     const [processInput, setProcessInput] = useState('');
     const [panelList, setPanelList] = useState([]);
     const [historyList, setHistoryList] = useState([]);
@@ -143,7 +204,7 @@ const Dashboard = ({ token, onLogout }) => {
     const [modalProcess, setModalProcess] = useState(null);
     const [filters, setFilters] = useState({ responsavel: '', numero_processo: '', classificacao: '' });
     const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
-    const [showItensModal, setShowItensModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false); // Novo estado para o modal de configurações
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
 
@@ -176,6 +237,7 @@ const Dashboard = ({ token, onLogout }) => {
         fetchData();
     }, [fetchData]);
 
+    // O resto das suas funções (handleAddAndRun, handleRunMonitoring, etc.) permanecem exatamente as mesmas
     const handleAddAndRun = async () => {
         const lines = processInput.split('\n').filter(line => line.trim() !== '');
         if (lines.length === 0) {
@@ -213,7 +275,6 @@ const Dashboard = ({ token, onLogout }) => {
             setIsLoading(false);
         }
     };
-
     const handleRunMonitoring = async () => {
         setIsLoading(true);
         setMessage('Iniciando monitoramento dos processos pendentes...');
@@ -228,7 +289,6 @@ const Dashboard = ({ token, onLogout }) => {
             setIsLoading(false);
         }
     };
-
     const handleArchiveProcess = async (numero_processo) => {
         try {
             setMessage(`Arquivando processo ${numero_processo}...`);
@@ -245,7 +305,6 @@ const Dashboard = ({ token, onLogout }) => {
             setMessage('Erro ao arquivar o processo.');
         }
     };
-
     const handleExport = async () => {
         setMessage('Gerando planilha...');
         setIsLoading(true);
@@ -271,13 +330,11 @@ const Dashboard = ({ token, onLogout }) => {
             setIsLoading(false);
         }
     };
-
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFilters(prevFilters => ({ ...prevFilters, [name]: value }));
         setCurrentPage(1);
     };
-
     const requestSort = (key) => {
         let direction = 'ascending';
         if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -287,11 +344,11 @@ const Dashboard = ({ token, onLogout }) => {
         setCurrentPage(1);
     };
 
+    // Suas funções de ordenação e paginação (useMemo, etc) permanecem intactas
     const getSortIcon = (name) => {
         if (sortConfig.key !== name) return null;
         return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
     };
-
     const sortedAndFilteredPanelList = useMemo(() => {
         let list = [...panelList];
         list = list.filter(proc =>
@@ -308,28 +365,31 @@ const Dashboard = ({ token, onLogout }) => {
         }
         return list;
     }, [panelList, filters, sortConfig]);
-
     const paginatedList = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
         return sortedAndFilteredPanelList.slice(startIndex, startIndex + itemsPerPage);
     }, [sortedAndFilteredPanelList, currentPage, itemsPerPage]);
-
     const totalPages = Math.ceil(sortedAndFilteredPanelList.length / itemsPerPage);
+
 
     return (
         <>
-            {showItensModal && <ItensRelevantesModal onClose={() => setShowItensModal(false)} token={token} onAuthError={onLogout} />}
+            {/* Renderiza o novo Modal de Configurações */}
+            {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} token={token} onAuthError={onLogout} userRole={userRole} />}
+
             <Modal processo={modalProcess} onClose={() => setModalProcess(null)} />
             <div className="App">
                 <header className="App-header">
                     <img src={logo} className="header-logo" alt="Logo OneSid" />
                     <h1>OneSid</h1>
                     <div>
-                        <button className="header-button" onClick={() => setShowItensModal(true)}>Definir Itens</button>
+                        {/* O botão agora abre o novo modal de configurações */}
+                        <button className="header-button" onClick={() => setShowSettingsModal(true)}>Configurações</button>
                         <button className="header-button" onClick={onLogout} style={{ marginLeft: '10px' }}>Sair</button>
                     </div>
                 </header>
                 <main className="panel-container">
+                    {/* Todo o resto da sua interface (input-section, results-section, tabelas, etc.) permanece exatamente igual */}
                     <div className="input-section">
                         <h2>Submeter Novos Processos</h2>
                         <p>Copie e cole da sua planilha (as 4 colunas).</p>
@@ -418,22 +478,31 @@ const Dashboard = ({ token, onLogout }) => {
     );
 };
 
-
+// --- SEU COMPONENTE APP (com lógica de role) ---
 function App() {
     const [token, setToken] = useState(localStorage.getItem('user_token'));
+    const [userRole, setUserRole] = useState(localStorage.getItem('user_role')); // Novo estado para a role
 
-    const handleLoginSuccess = (newToken) => {
+    // Função de login agora salva o token E a role
+    const handleLoginSuccess = (newToken, role) => {
         localStorage.setItem('user_token', newToken);
+        localStorage.setItem('user_role', role); // Salva a role
         setToken(newToken);
+        setUserRole(role);
     };
 
+    // Função de logout agora limpa o token E a role
     const handleLogout = () => {
         localStorage.removeItem('user_token');
+        localStorage.removeItem('user_role'); // Limpa a role
         setToken(null);
+        setUserRole(null);
     };
 
     return (
-        token ? <Dashboard token={token} onLogout={handleLogout} /> : <LoginPage onLoginSuccess={handleLoginSuccess} />
+        token && userRole
+            ? <Dashboard token={token} onLogout={handleLogout} userRole={userRole} /> // Passa a role para o Dashboard
+            : <LoginPage onLoginSuccess={handleLoginSuccess} />
     );
 }
 

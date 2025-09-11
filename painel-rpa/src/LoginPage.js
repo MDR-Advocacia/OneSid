@@ -1,76 +1,61 @@
 import React, { useState } from 'react';
-import './LoginPage.css'; // Criaremos este arquivo de estilo a seguir
+import './LoginPage.css';
 import logo from './assets/logo-onesid.png';
+import { login } from './api'; // Importa a função de login da nossa API
 
-const API_BASE_URL = 'http://127.0.0.1:5000';
+function LoginPage({ onLoginSuccess }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
-const LoginPage = ({ onLoginSuccess }) => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setIsLoading(true);
-        setError('');
+    try {
+      // A resposta da API agora inclui 'access_token' e 'role'
+      const data = await login(username, password);
+      
+      if (data.access_token && data.role) {
+        // Passa o token e a role para o componente App
+        onLoginSuccess(data.access_token, data.role);
+      } else {
+        setError('Resposta de login inválida do servidor.');
+      }
+    } catch (err) {
+      setError(err.message || 'Falha no login. Verifique suas credenciais.');
+    }
+  };
 
-        try {
-            const response = await fetch(`${API_BASE_URL}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Usuário ou senha inválidos.');
-            }
-
-            const data = await response.json();
-            // Chama a função do App.js para salvar o token
-            onLoginSuccess(data.access_token);
-
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <div className="login-container">
-            <div className="login-box">
-                <img src={logo} alt="OneSid Logo" className="login-logo" />
-                <h2>Acessar Painel RPA</h2>
-                <form onSubmit={handleSubmit}>
-                    <div className="input-group">
-                        <label htmlFor="username">Usuário</label>
-                        <input
-                            type="text"
-                            id="username"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="input-group">
-                        <label htmlFor="password">Senha</label>
-                        <input
-                            type="password"
-                            id="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
-                    </div>
-                    {error && <p className="error-message">{error}</p>}
-                    <button type="submit" disabled={isLoading}>
-                        {isLoading ? 'Entrando...' : 'Entrar'}
-                    </button>
-                </form>
-            </div>
-        </div>
-    );
-};
+  return (
+    <div className="login-container">
+      <div className="login-box">
+        <img src={logo} alt="Logo OneSid" className="login-logo" />
+        <form onSubmit={handleLogin}>
+          <div className="input-group">
+            <input
+              type="text"
+              placeholder="Usuário"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+          </div>
+          <div className="input-group">
+            <input
+              type="password"
+              placeholder="Senha"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          {error && <p className="login-error">{error}</p>}
+          <button type="submit" className="login-button">Entrar</button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export default LoginPage;

@@ -1,14 +1,15 @@
 import sys
 import os
 import traceback
+from functools import wraps
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.security import check_password_hash
-from flask_jwt_extended import create_access_token, jwt_required, JWTManager
+from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
 from openpyxl import Workbook
 from io import BytesIO
 
-# --- CORREÇÃO DO CAMINHO DE IMPORTAÇÃO (existente) ---
+# --- CORREÇÃO DO CAMINHO DE IMPORTAÇÃO (mantido) ---
 caminho_atual = os.path.dirname(os.path.abspath(__file__))
 caminho_raiz_do_projeto = os.path.dirname(caminho_atual)
 sys.path.append(caminho_raiz_do_projeto)
@@ -17,42 +18,59 @@ sys.path.append(caminho_raiz_do_projeto)
 import main
 from bd import database
 
-# Inicializa o banco de dados antes de tudo
+# Inicializa o banco de dados com a estrutura mais recente
 database.inicializar_banco()
 
 app = Flask(__name__)
 
 # --- CONFIGURAÇÕES DA APLICAÇÃO ---
-# Adiciona a chave secreta para o JWT
-app.config["JWT_SECRET_KEY"] = "uma-chave-super-secreta-e-diferente" # Mude para uma chave segura
-
-# Habilita o CORS para a aplicação
+# DICA DE SEGURANÇA: É melhor carregar isso de uma variável de ambiente
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "uma-chave-super-secreta-e-diferente")
 CORS(app)
-
-# Inicializa o JWTManager com a aplicação
 jwt = JWTManager(app)
 # --- FIM DAS CONFIGURAÇÕES ---
 
 
-# --- ROTA DE LOGIN ---
+# --- DECORADOR DE PERMISSÃO DE ADMIN ---
+def admin_required():
+    """Decorador que protege uma rota, permitindo acesso apenas a usuários com role 'admin'."""
+    def wrapper(fn):
+        @wraps(fn)
+        def decorator(*args, **kwargs):
+            current_username = get_jwt_identity()
+            user = database.buscar_usuario_por_nome(current_username)
+            if user and user.get('role') == 'admin':
+                return fn(*args, **kwargs)
+            else:
+                return jsonify(msg="Acesso restrito a administradores!"), 403
+        return decorator
+    return wrapper
+# --- FIM DO DECORADOR ---
+
+
+# --- ROTA DE LOGIN (ATUALIZADA) ---
 @app.route('/login', methods=['POST'])
 def login_endpoint():
     data = request.get_json()
-    username = data.get('username', None)
-    password = data.get('password', None)
+    username = data.get('username')
+    password = data.get('password')
 
     user = database.buscar_usuario_por_nome(username)
     
+    # Verifica se o usuário existe e se a senha está correta
     if user and check_password_hash(user['password_hash'], password):
+        # Cria o token de acesso
         access_token = create_access_token(identity=username)
-        return jsonify(access_token=access_token)
+        # Retorna o token E a permissão (role) do usuário
+        return jsonify(access_token=access_token, role=user.get('role', 'user'))
     
     return jsonify({"msg": "Usuário ou senha inválidos"}), 401
 # --- FIM DA ROTA DE LOGIN ---
 
 
-# --- ROTAS PROTEGIDAS ---
+# --- ROTAS DE ITENS (ADMIN E USUÁRIO) ---
 
+# Rota para buscar a lista mestre de itens (acessível por todos os usuários logados)
 @app.route('/itens-relevantes', methods=['GET'])
 @jwt_required()
 def get_itens_relevantes():
@@ -62,8 +80,10 @@ def get_itens_relevantes():
     except Exception as e:
         return jsonify({"error": f"Erro: {e}"}), 500
 
+# Rota para ADMIN salvar/atualizar a lista mestre de itens
 @app.route('/itens-relevantes', methods=['POST'])
 @jwt_required()
+@admin_required() # <-- Apenas admins podem acessar
 def post_itens_relevantes():
     try:
         data = request.get_json()
@@ -72,6 +92,47 @@ def post_itens_relevantes():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": f"Erro: {e}"}), 500
+
+# NOVA Rota para um USUÁRIO obter a lista de itens com SUAS preferências
+@app.route('/preferencias-usuario', methods=['GET'])
+@jwt_required()
+def get_user_preferences():
+    try:
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user:
+            return jsonify({"msg": "Usuário não encontrado"}), 404
+        
+        preferences = database.get_itens_com_preferencias_usuario(user['id'])
+        return jsonify(preferences)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro ao buscar preferências: {e}"}), 500
+
+# NOVA Rota para um USUÁRIO habilitar ou desabilitar um item
+@app.route('/preferencias-usuario', methods=['PUT'])
+@jwt_required()
+def update_user_preference():
+    try:
+        current_username = get_jwt_identity()
+        user = database.buscar_usuario_por_nome(current_username)
+        if not user:
+            return jsonify({"msg": "Usuário não encontrado"}), 404
+        
+        data = request.get_json()
+        item_id = data.get('item_id')
+        is_enabled = data.get('is_enabled')
+
+        if item_id is None or not isinstance(is_enabled, bool):
+            return jsonify({"msg": "Parâmetros 'item_id' e 'is_enabled' (booleano) são obrigatórios."}), 400
+            
+        database.atualizar_preferencia_usuario(user['id'], item_id, is_enabled)
+        return jsonify({"success": True})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erro ao atualizar preferência: {e}"}), 500
+
+# --- ROTAS DE PROCESSOS E RPA (sem alterações de lógica) ---
 
 @app.route('/add-and-run', methods=['POST'])
 @jwt_required()
