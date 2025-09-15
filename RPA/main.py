@@ -19,13 +19,13 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
                 return
 
             context = browser.contexts[0]
-            portal_page = context.pages[0] if context.pages else context.new_page()
-
+            
             print("1. Realizando login no portal...")
-            login_sucesso = portal_bb.fazer_login(portal_page, config.EXTENSION_URL)
-            if not login_sucesso:
+            # CORREÇÃO: Passa o 'context' para a função de login e recebe a 'page' de volta.
+            portal_page = portal_bb.fazer_login(context, config.EXTENSION_URL)
+            if not portal_page:
                 print("❌ Falha no login. Verifique as credenciais ou a página.")
-                return
+                return # Encerra se o login falhar
             print("✔️ Login realizado com sucesso.")
 
             print(f"2. Iniciando consulta para {len(lista_processos)} processo(s).")
@@ -40,11 +40,11 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
                     processo.clicar_menu_subsidios(portal_page, num_processo)
                     
                     print(f"    c. Extraindo dados da tabela...")
-                    dados_subsidios = processo.extrair_dados_subsidios(portal_page)
+                    dados_subsidios_do_processo = processo.extrair_dados_subsidios(portal_page)
                     
-                    if dados_subsidios:
-                        print(f"    d. Encontrados {len(dados_subsidios)} subsídios. Atualizando banco de dados...")
-                        funcao_de_atualizacao(num_processo, dados_subsidios)
+                    if dados_subsidios_do_processo:
+                        print(f"    d. Encontrados {len(dados_subsidios_do_processo)} subsídios. Atualizando banco de dados...")
+                        funcao_de_atualizacao(num_processo, dados_subsidios_do_processo)
                         print(f"    ✔️ Banco de dados atualizado para o processo {num_processo}.")
                     else:
                         print(f"    d. Nenhum subsídio encontrado para {num_processo}.")
@@ -57,7 +57,7 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
             print("\n✅ CONSULTA RPA FINALIZADA.")
 
     except Exception as e:
-        print(f"\n========================= ERRO GERAL NO RPA =========================")
+        print("\n========================= ERRO GERAL NO RPA =========================")
         print(f"Ocorreu uma falha crítica na automação: {e}")
     finally:
         if browser:
