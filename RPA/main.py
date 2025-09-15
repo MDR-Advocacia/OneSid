@@ -9,10 +9,6 @@ caminho_raiz_do_projeto = os.path.dirname(caminho_atual)
 sys.path.append(caminho_raiz_do_projeto)
 
 def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar_status_para_usuarios):
-    """
-    Orquestra a execução do robô para uma lista de processos,
-    com logs detalhados para cada etapa.
-    """
     print("--- INICIANDO EXECUÇÃO DO RPA ---")
     browser = None
     try:
@@ -56,21 +52,18 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
                 except Exception as e:
                     print(f"!!!!!!!!!!!!!! ERRO AO PROCESSAR {num_processo} !!!!!!!!!!!!!!")
                     print(f"Detalhes: {e}")
-                    print("Continuando para o próximo processo...")
                     continue
 
             print("\n✅ CONSULTA RPA FINALIZADA.")
 
     except Exception as e:
-        print("\n========================= ERRO GERAL NO RPA =========================")
+        print(f"\n========================= ERRO GERAL NO RPA =========================")
         print(f"Ocorreu uma falha crítica na automação: {e}")
-        print("=====================================================================")
     finally:
         if browser:
             print("3. Fechando navegador...")
             navegador.fechar_navegador()
         print("--- EXECUÇÃO DO RPA FINALIZADA ---")
-
 
 if __name__ == "__main__":
     print("Este script é projetado para ser chamado pelo server.py ou scheduler.py.")
