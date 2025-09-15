@@ -81,14 +81,38 @@ def associar_processos_usuario(user_id: int, processos_com_dados: list):
     conn.commit()
     conn.close()
 
-def _todos_relevantes_satisfeitos(itens_relevantes_usuario, subsidios_concluidos_encontrados):
-    if not itens_relevantes_usuario: return False
-    norm_relevantes = {_normalize_string(item) for item in itens_relevantes_usuario}
-    norm_concluidos = {_normalize_string(item) for item in subsidios_concluidos_encontrados}
-    for item_relevante in norm_relevantes:
-        if not any(item_relevante in subsidio_concluido or subsidio_concluido in item_relevante for subsidio_concluido in norm_concluidos):
+def _todos_relevantes_satisfeitos(self, processo_id, usuario_id):
+        """
+        Verifica se todos os subsídios relevantes para o usuário, que estão presentes
+        em um determinado processo, foram concluídos.
+        """
+        # 1. Pega a lista de todos os itens que o usuário marcou como relevantes nas configurações
+        self.cursor.execute("SELECT item_id FROM preferencias_usuario WHERE usuario_id = ? AND relevante = 1", (usuario_id,))
+        preferencias_relevantes_ids = {row[0] for row in self.cursor.fetchall()}
+
+        if not preferencias_relevantes_ids:
+            return False # Se o usuário não tem nenhum item de interesse, a condição nunca será satisfeita
+
+        # 2. Pega a lista de todos os itens que existem NESTE processo específico
+        self.cursor.execute("SELECT item_id FROM subsidios WHERE processo_id = ?", (processo_id,))
+        itens_no_processo_ids = {row[0] for row in self.cursor.fetchall()}
+
+        # 3. Descobre quais dos itens de interesse do usuário REALMENTE ESTÃO no processo atual
+        #    Esta é a intersecção entre os dois conjuntos
+        relevantes_neste_processo_ids = preferencias_relevantes_ids.intersection(itens_no_processo_ids)
+
+        # Se nenhum dos itens de interesse do usuário está neste processo, não há o que fazer aqui
+        if not relevantes_neste_processo_ids:
             return False
-    return True
+
+        # 4. Pega a lista de todos os subsídios que já foram CONCLUÍDOS para este processo
+        self.cursor.execute("SELECT item_id FROM subsidios WHERE processo_id = ? AND status = 'Concluído'", (processo_id,))
+        subsidios_concluidos_ids = {row[0] for row in self.cursor.fetchall()}
+
+        # 5. A condição final:
+        #    Verifica se o conjunto de itens relevantes DESTE PROCESSO é um subconjunto dos itens concluídos.
+        #    Em outras palavras: "Todos os itens de interesse que existem neste processo foram concluídos?"
+        return relevantes_neste_processo_ids.issubset(subsidios_concluidos_ids)
 
 def atualizar_status_para_usuarios(numero_processo: str, lista_subsidios: list):
     conn = sqlite3.connect(DB_NAME)
