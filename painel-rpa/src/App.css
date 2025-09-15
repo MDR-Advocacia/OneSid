@@ -506,3 +506,38 @@ input:checked + .slider:before {
 .form-group select {
   cursor: pointer;
 }
+
+
+
+/* Estilo para a área de importação de arquivo */
+.import-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+}
+
+.import-section input[type="file"] {
+  display: none; /* Esconde o input padrão feio */
+}
+
+.import-section .import-label {
+  padding: 8px 12px;
+  background-color: #5bc0de;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.import-section .import-label:hover {
+  background-color: #31b0d5;
+}
+
+.import-section .file-name {
+  color: #ccc;
+  font-style: italic;
+}

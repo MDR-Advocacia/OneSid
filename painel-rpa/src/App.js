@@ -3,7 +3,7 @@ import LoginPage from './LoginPage';
 import './App.css';
 import logo from './assets/logo-onesid.png';
 
-const API_BASE_URL = 'http://127.0.0.1:5000';
+const API_BASE_URL = 'http://192.168.0.65:5000'; // Lembre-se de usar o IP do seu servidor
 
 // --- SEUS COMPONENTES DE MODAL EXISTENTES (sem alterações) ---
 const Modal = ({ processo, onClose }) => {
@@ -47,13 +47,13 @@ const Modal = ({ processo, onClose }) => {
     );
 };
 
+// --- MODAL DE CONFIGURAÇÕES (CORRIGIDO) ---
 const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
     const [activeTab, setActiveTab] = useState('itens');
-
     const [itens, setItens] = useState([]);
     const [novoItem, setNovoItem] = useState('');
     const [itensStatus, setItensStatus] = useState('Carregando...');
-
+    const [selectedFile, setSelectedFile] = useState(null);
     const [userList, setUserList] = useState([]);
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -61,17 +61,22 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
     const [userStatus, setUserStatus] = useState('');
 
     const fetchWithAuth = useCallback(async (url, options = {}) => {
-        const headers = { 'Content-Type': 'application/json', ...options.headers, 'Authorization': `Bearer ${token}` };
+        const isFileUpload = options.body instanceof FormData;
+        const headers = {
+            ...(!isFileUpload && { 'Content-Type': 'application/json' }),
+            ...options.headers,
+            'Authorization': `Bearer ${token}`
+        };
         const response = await fetch(url, { ...options, headers });
         if (response.status === 401) {
             onAuthError();
             throw new Error('Sessão expirada.');
         }
+        const responseData = await response.json();
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ msg: "Erro desconhecido" }));
-            throw new Error(errorData.msg);
+            throw new Error(responseData.msg || responseData.error || "Erro desconhecido");
         }
-        return response.json();
+        return responseData;
     }, [token, onAuthError]);
 
     useEffect(() => {
@@ -88,7 +93,6 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
                 setItensStatus('');
             } catch (e) { setItensStatus(`Erro: ${e.message}`); }
         };
-
         const fetchUsersData = async () => {
             if (userRole === 'admin') {
                 try {
@@ -99,10 +103,8 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
                 } catch (e) { setUserStatus(`Erro: ${e.message}`); }
             }
         };
-
         if (activeTab === 'itens') fetchItensData();
         if (activeTab === 'usuarios') fetchUsersData();
-
     }, [fetchWithAuth, userRole, activeTab]);
 
     const handleAddItem = () => { if (novoItem && !itens.includes(novoItem.trim())) setItens([...itens, novoItem.trim()]); setNovoItem(''); };
@@ -124,7 +126,6 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
             setItens(prev => prev.map(item => item.id === itemId ? { ...item, is_enabled: !isEnabled } : item));
         }
     };
-
     const handleCreateUser = async (e) => {
         e.preventDefault();
         setUserStatus('Criando usuário...');
@@ -142,6 +143,36 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
             setUserStatus(`Erro: ${e.message}`);
         }
     };
+    const handleFileChange = (event) => {
+        const file = event.target.files[0];
+        if (file && file.name.endsWith('.txt')) {
+            setSelectedFile(file);
+            setItensStatus('');
+        } else {
+            setSelectedFile(null);
+            setItensStatus("Por favor, selecione um arquivo .txt");
+        }
+    };
+    const handleFileUpload = async () => {
+        if (!selectedFile) {
+            setItensStatus("Nenhum arquivo selecionado.");
+            return;
+        }
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        try {
+            setItensStatus('Importando...');
+            const result = await fetchWithAuth(`${API_BASE_URL}/importar-itens`, {
+                method: 'POST',
+                body: formData,
+            });
+            setItens(result.itens.map(item => item.item_nome));
+            setItensStatus(result.msg);
+            setSelectedFile(null);
+        } catch (e) {
+            setItensStatus(`Erro na importação: ${e.message}`);
+        }
+    };
 
     return (
         <div className="modal-backdrop" onClick={onClose}>
@@ -157,23 +188,35 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
                 </div>
                 {activeTab === 'itens' && (
                     <>
-                        <h3>{userRole === 'admin' ? 'Definir Itens Relevantes' : 'Minhas Preferências de Itens'}</h3>
-                        <p>{userRole === 'admin' ? 'Adicione ou remova itens da lista mestra.' : 'Habilite ou desabilite os itens que deseja monitorar.'}</p>
+                        <h3>{userRole === 'admin' ? 'Gerenciar Itens Relevantes' : 'Minhas Preferências de Itens'}</h3>
+                        
                         {userRole === 'admin' ? (
-                            <div className="item-manager">
-                                <div className="item-add-form">
-                                    <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
-                                    <button onClick={handleAddItem} className="add-button">Adicionar</button>
+                            <>
+                                <p>Adicione/remova itens manualmente ou importe uma lista de um arquivo .txt.</p>
+                                <div className="item-manager">
+                                    <div className="item-add-form">
+                                        <input type="text" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} placeholder="Digite o nome do novo item..." onKeyPress={(e) => e.key === 'Enter' && handleAddItem()} />
+                                        <button onClick={handleAddItem} className="add-button">Adicionar</button>
+                                    </div>
+                                    <ul className="item-list">
+                                        {itens.length > 0 ? itens.map((item, index) => (
+                                            <li key={index}>
+                                                <span>{item}</span>
+                                                <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
+                                            </li>
+                                        )) : <p>Nenhum item relevante definido.</p>}
+                                    </ul>
                                 </div>
-                                <ul className="item-list">
-                                    {itens.length > 0 ? itens.map((item, index) => (
-                                        <li key={index}>
-                                            <span>{item}</span>
-                                            <button onClick={() => handleRemoveItem(item)} className="remove-button">Remover</button>
-                                        </li>
-                                    )) : <p>Nenhum item relevante definido.</p>}
-                                </ul>
-                            </div>
+                                {/* ================================================================== */}
+                                {/* SEÇÃO DE IMPORTAÇÃO QUE FALTAVA                      */}
+                                {/* ================================================================== */}
+                                <div className="import-section">
+                                    <label htmlFor="file-upload" className="import-label">Escolher Arquivo</label>
+                                    <input id="file-upload" type="file" accept=".txt" onChange={handleFileChange} />
+                                    {selectedFile && <span className="file-name">{selectedFile.name}</span>}
+                                    <button onClick={handleFileUpload} className="secondary-button" disabled={!selectedFile}>Importar Arquivo</button>
+                                </div>
+                            </>
                         ) : (
                             <div className="preferences-list">
                                 {itens.map(item => (
@@ -189,7 +232,8 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
                         )}
                         <div className="modal-actions">
                             <span className="feedback-message">{itensStatus}</span>
-                            {userRole === 'admin' && <button onClick={handleSaveAdminItems} className="primary-button">Salvar</button>}
+                            {/* Ajuste no texto do botão para clareza */}
+                            {userRole === 'admin' && <button onClick={handleSaveAdminItems} className="primary-button">Salvar Alterações Manuais</button>}
                             <button onClick={onClose} className="secondary-button">Fechar</button>
                         </div>
                     </>
@@ -236,7 +280,6 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
     );
 };
 
-// --- COMPONENTE DASHBOARD (ATUALIZADO) ---
 const Dashboard = ({ token, onLogout, userRole }) => {
     const [processInput, setProcessInput] = useState('');
     const [panelList, setPanelList] = useState([]);
@@ -262,11 +305,9 @@ const Dashboard = ({ token, onLogout, userRole }) => {
 
     const fetchData = useCallback(async () => {
         try {
-            // As rotas /painel e /historico agora retornam dados personalizados pelo backend
             const panelResponse = await fetchWithAuth(`${API_BASE_URL}/painel`);
             const panelData = await panelResponse.json();
             setPanelList(Array.isArray(panelData) ? panelData : []);
-
             const historyResponse = await fetchWithAuth(`${API_BASE_URL}/historico`);
             const historyData = await historyResponse.json();
             setHistoryList(Array.isArray(historyData) ? historyData : []);
@@ -280,7 +321,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
         fetchData();
     }, [fetchData]);
 
-    const handleAddAndRun = async () => {
+    const handleAddProcesses = async () => {
         const lines = processInput.split('\n').filter(line => line.trim() !== '');
         if (lines.length === 0) {
             setMessage('Por favor, insira os dados no formato correto.');
@@ -293,46 +334,40 @@ const Dashboard = ({ token, onLogout, userRole }) => {
             }
             return null;
         }).filter(Boolean);
-
         if (processosParaEnviar.length === 0) {
             setMessage('Nenhum processo válido encontrado. Verifique o formato colado da planilha.');
             return;
         }
-
         setIsLoading(true);
-        setMessage('Adicionando e consultando seus novos processos...');
+        setMessage('Adicionando seus processos para monitoramento...');
         try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/add-and-run`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/add-processes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ processos: processosParaEnviar }),
             });
-            if (!response.ok) throw new Error('Falha ao submeter novos processos.');
-            
-            // A API já retorna o painel atualizado do usuário
-            const updatedPanelData = await response.json();
-            setPanelList(Array.isArray(updatedPanelData) ? updatedPanelData : []);
-            
-            setMessage('Seus processos foram consultados com sucesso!');
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Falha ao adicionar processos.');
+            }
+            setMessage('Processos adicionados com sucesso! O próximo monitoramento automático irá consultá-los.');
             setProcessInput('');
+            fetchData();
         } catch (error) {
-            setMessage('Erro ao consultar novos processos.');
+            setMessage(`Erro ao adicionar processos: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
     };
-    
+
     const handleRunMonitoring = async () => {
         setIsLoading(true);
-        setMessage('Iniciando monitoramento geral...');
+        setMessage('Iniciando monitoramento manual...');
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/run-monitoring`, { method: 'POST' });
             if (!response.ok) throw new Error('Falha ao rodar monitoramento.');
-            
-            // A API retorna a sua visão atualizada do painel
             const updatedPanelData = await response.json();
             setPanelList(Array.isArray(updatedPanelData) ? updatedPanelData : []);
-            
             setMessage('Monitoramento finalizado!');
         } catch (error) {
             setMessage('Erro durante o monitoramento.');
@@ -340,31 +375,24 @@ const Dashboard = ({ token, onLogout, userRole }) => {
             setIsLoading(false);
         }
     };
-    
-    // ==================================================================
-    //               MUDANÇA PRINCIPAL AQUI
-    // ==================================================================
+
     const handleDarCiencia = async (numero_processo) => {
         try {
             setMessage(`Dando ciência no processo ${numero_processo}...`);
-            const response = await fetchWithAuth(`${API_BASE_URL}/dar-ciencia`, { // Nova rota
+            const response = await fetchWithAuth(`${API_BASE_URL}/dar-ciencia`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ numero_processo: numero_processo }),
             });
             if (!response.ok) throw new Error('Falha ao dar ciência no processo.');
-            
-            // Apenas remove o processo da lista local para uma atualização visual instantânea
             setPanelList(prevList => prevList.filter(p => p.numero_processo !== numero_processo));
-            
             setMessage(`Processo ${numero_processo} arquivado da sua visão.`);
         } catch (error) {
             console.error("Erro ao dar ciência:", error);
             setMessage('Erro ao dar ciência no processo.');
         }
     };
-    // ==================================================================
-    
+
     const handleExport = async () => {
         setMessage('Gerando sua planilha...');
         setIsLoading(true);
@@ -388,7 +416,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
             setIsLoading(false);
         }
     };
-    
+
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFilters(prevFilters => ({ ...prevFilters, [name]: value }));
@@ -448,8 +476,14 @@ const Dashboard = ({ token, onLogout, userRole }) => {
                         <p>Copie e cole da sua planilha (as 4 colunas).</p>
                         <textarea rows="8" placeholder="Escritório [TAB] Responsável [TAB] Processo [TAB] Classificação" value={processInput} onChange={(e) => setProcessInput(e.target.value)} disabled={isLoading} />
                         <div className="button-group">
-                            <button onClick={handleAddAndRun} disabled={isLoading}>{isLoading ? 'Aguarde...' : 'Adicionar e Consultar Novos'}</button>
-                            <button onClick={handleRunMonitoring} disabled={isLoading} className="secondary-button">{isLoading ? 'Aguarde...' : "Rodar Monitoramento"}</button>
+                            <button onClick={handleAddProcesses} disabled={isLoading}>
+                                {isLoading ? 'Aguarde...' : 'Adicionar para monitoramento'}
+                            </button>
+                            {userRole === 'admin' && (
+                                <button onClick={handleRunMonitoring} disabled={isLoading} className="secondary-button">
+                                    {isLoading ? 'Aguarde...' : "Rodar Monitoramento Manual"}
+                                </button>
+                            )}
                         </div>
                         {message && <p className="feedback-message">{message}</p>}
                     </div>
@@ -497,10 +531,8 @@ const Dashboard = ({ token, onLogout, userRole }) => {
                                             <td>{proc.responsavel_principal}</td>
                                             <td><button className="link-button" onClick={() => setModalProcess(proc)}>{proc.numero_processo}</button></td>
                                             <td>{proc.classificacao}</td>
-                                            {/* O status agora é 'status_visualizacao', mas mantivemos o nome 'status_geral' no backend para compatibilidade */}
-                                            <td><span className={`status status-${proc.status_geral.replace(/\s+/g, '-')}`}>{proc.status_geral === 'pendente_ciencia' ? 'Pendente Ciência' : 'Monitorando'}</span></td>
+                                            <td><span className={`status status-${(proc.status_geral || '').replace(/\s+/g, '-')}`}>{proc.status_geral === 'pendente_ciencia' ? 'Pendente Ciência' : 'Monitorando'}</span></td>
                                             <td>{new Date(proc.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
-                                            {/* A ação agora chama a nova função handleDarCiencia */}
                                             <td>{proc.status_geral === 'pendente_ciencia' && (<button className="archive-button" onClick={() => handleDarCiencia(proc.numero_processo)}>Dar Ciência</button>)}</td>
                                         </tr>
                                     ))}

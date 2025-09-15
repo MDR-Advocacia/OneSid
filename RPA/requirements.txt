@@ -11,3 +11,5 @@ playwright
 
 # Para carregar variáveis de ambiente (melhora a segurança)
 python-dotenv
+
+schedule

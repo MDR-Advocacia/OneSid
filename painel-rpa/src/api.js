@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000'; // Ou o endereço do seu backend
+const API_BASE_URL = 'http://192.168.0.65:5000'; // Ou o endereço do seu backend
 
 // Função auxiliar para fazer requisições autenticadas
 const fetchAuth = async (url, options = {}) => {
