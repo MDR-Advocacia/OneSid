@@ -322,18 +322,42 @@ const Dashboard = ({ token, onLogout, userRole }) => {
     }, [fetchData]);
 
     const handleAddProcesses = async () => {
-        const lines = processInput.split('\n').filter(line => line.trim() !== '');
+        // Lógica de parsing aprimorada para lidar com quebras de linha dentro dos campos
+        const rawLines = processInput.split('\n');
+        const mergedLines = [];
+        let currentLine = '';
+
+        rawLines.forEach(line => {
+            // Uma linha de início de registro válida geralmente começa com "MDR" e tem várias tabulações
+            const isNewRecord = line.startsWith('MDR') && (line.match(/\t/g) || []).length >= 3;
+            if (isNewRecord && currentLine !== '') {
+                mergedLines.push(currentLine);
+                currentLine = line;
+            } else {
+                currentLine = currentLine ? `${currentLine}\n${line}` : line;
+            }
+        });
+        if (currentLine !== '') {
+            mergedLines.push(currentLine);
+        }
+
+        const lines = mergedLines.filter(line => line.trim() !== '');
+
         if (lines.length === 0) {
             setMessage('Por favor, insira os dados no formato correto.');
             return;
         }
+
         const processosParaEnviar = lines.map(line => {
-            const parts = line.split('\t');
+            // Limpa o número do processo de caracteres problemáticos (aspas, novas linhas)
+            const cleanedLine = line.replace(/"/g, '');
+            const parts = cleanedLine.split('\t');
             if (parts.length >= 4) {
                 return { responsavel: parts[1].trim(), numero: parts[2].trim(), classificacao: parts[3].trim() };
             }
             return null;
         }).filter(Boolean);
+
         if (processosParaEnviar.length === 0) {
             setMessage('Nenhum processo válido encontrado. Verifique o formato colado da planilha.');
             return;
