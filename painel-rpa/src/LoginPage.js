@@ -32,7 +32,11 @@ function LoginPage({ onLoginSuccess }) {
       <div className="login-box">
         <img src={logo} alt="Logo OneSid" className="login-logo" />
         <form onSubmit={handleLogin}>
+
+          <h3 className="login-title">Painel RPA de Subsídios</h3>
+          <h2 className="login-subtitle">OneSID</h2>
           <div className="input-group">
+          
             <input
               type="text"
               placeholder="Usuário"

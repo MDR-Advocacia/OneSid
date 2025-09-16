@@ -47,14 +47,14 @@ def executar_tarefa_monitoramento():
 # Exemplo 2: Rodar uma vez por dia às 09:00 da manhã.
 # schedule.every().day.at("09:00").do(executar_tarefa_monitoramento)
 
-# ATIVO PARA TESTES: Rodar a cada 10 minutos.
-schedule.every(10).minutes.do(executar_tarefa_monitoramento)
+# ATIVO PARA TESTES: Rodar a cada 50 minutos.
+schedule.every(50).minutes.do(executar_tarefa_monitoramento)
 # ==================================================================
 
 
 if __name__ == "__main__":
     print("✅ Agendador de Monitoramento Automático Iniciado.")
-    print("O robô será executado a cada 10 minutos.")
+    print("O robô será executado a cada 50 minutos.")
     print("Pressione Ctrl+C para encerrar.")
     
     # Executa a tarefa uma vez logo ao iniciar o script
