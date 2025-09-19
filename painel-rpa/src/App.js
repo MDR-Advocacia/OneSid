@@ -107,6 +107,25 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
         if (activeTab === 'usuarios') fetchUsersData();
     }, [fetchWithAuth, userRole, activeTab]);
 
+    const handleDeselectAll = () => {
+        // Mapeia todos os itens para o estado 'desmarcado'
+        const desmarcarPromises = itens.map(item => {
+            // Só envia o pedido para a API se o item já estiver marcado
+            if (item.is_enabled) {
+                return handleUserPreferenceChange(item.id, false);
+            }
+            return Promise.resolve(); // Retorna uma promessa resolvida para itens já desmarcados
+        });
+
+        // Espera todas as atualizações terminarem
+        Promise.all(desmarcarPromises)
+            .then(() => {
+                setItensStatus('Todos os itens foram desmarcados.');
+            })
+            .catch((e) => {
+                setItensStatus(`Ocorreu um erro: ${e.message}`);
+            });
+    };
     const handleAddItem = () => { if (novoItem && !itens.includes(novoItem.trim())) setItens([...itens, novoItem.trim()]); setNovoItem(''); };
     const handleRemoveItem = (itemToRemove) => setItens(itens.filter(item => item !== itemToRemove));
     const handleSaveAdminItems = async () => {
@@ -189,7 +208,7 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
                 {activeTab === 'itens' && (
                     <>
                         <h3>{userRole === 'admin' ? 'Gerenciar Itens Relevantes' : 'Minhas Preferências de Itens'}</h3>
-                        
+
                         {userRole === 'admin' ? (
                             <>
                                 <p>Adicione/remova itens manualmente ou importe uma lista de um arquivo .txt.</p>
@@ -232,7 +251,14 @@ const SettingsModal = ({ onClose, token, onAuthError, userRole }) => {
                         )}
                         <div className="modal-actions">
                             <span className="feedback-message">{itensStatus}</span>
-                            {/* Ajuste no texto do botão para clareza */}
+
+                            {/* BOTÃO NOVO ADICIONADO AQUI, APENAS PARA USUÁRIOS NORMAIS */}
+                            {userRole !== 'admin' && (
+                                <button onClick={handleDeselectAll} className="danger-button">
+                                    Desmarcar Todos
+                                </button>
+                            )}
+
                             {userRole === 'admin' && <button onClick={handleSaveAdminItems} className="primary-button">Salvar Alterações Manuais</button>}
                             <button onClick={onClose} className="secondary-button">Fechar</button>
                         </div>
@@ -498,7 +524,7 @@ const Dashboard = ({ token, onLogout, userRole }) => {
                     <div className="input-section">
                         <h2>Submeter Novos Processos</h2>
                         <p>Copie e cole da sua planilha (as 4 colunas).</p>
-                        <textarea rows="8" placeholder="Escritório [TAB] Responsável [TAB] Processo [TAB] Classificação" value={processInput} onChange={(e) => setProcessInput(e.target.value)} disabled={isLoading} />
+                        <textarea rows="8" placeholder="COPIE OS DADOS DA PLANILHA E COLE" value={processInput} onChange={(e) => setProcessInput(e.target.value)} disabled={isLoading} />
                         <div className="button-group">
                             <button onClick={handleAddProcesses} disabled={isLoading}>
                                 {isLoading ? 'Aguarde...' : 'Adicionar para monitoramento'}

@@ -541,3 +541,14 @@ input:checked + .slider:before {
   color: #ccc;
   font-style: italic;
 }
+
+
+button.danger-button {
+  background-color: #c9302c; /* Um tom de vermelho */
+  border-color: #c9302c;
+}
+button.danger-button:hover:not(:disabled) {
+  background-color: #a92824;
+  border-color: #a92824;
+  box-shadow: 0 6px 20px rgba(201, 48, 44, 0.4);
+}
