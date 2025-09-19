@@ -31,6 +31,11 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
             print(f"2. Iniciando consulta para {len(lista_processos)} processo(s).")
             for num_processo in lista_processos:
                 try:
+                    # --- VERIFICAÇÃO DE SESSÃO ADICIONADA ---
+                    # Garante que o robô está logado antes de processar cada item.
+                    portal_page = portal_bb.verificar_e_renovar_sessao(portal_page, context, config.EXTENSION_URL)
+                    # -----------------------------------------
+
                     print(f"\n   --- Processando: {num_processo} ---")
                     print(f"    a. Navegando para a página do processo...")
                     processo.navegar_para_processo(portal_page, num_processo, config.URL_BUSCA_PROCESSO)
