@@ -18,7 +18,9 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
                 print("❌ Falha ao iniciar o navegador. Abortando.")
                 return
 
-            context = browser.contexts[0]
+            # Cria um novo contexto isolado para a execução do robô.
+            print("    Criando novo contexto de navegador...")
+            context = browser.new_context()
             
             print("1. Realizando login no portal...")
             # CORREÇÃO: Passa o 'context' para a função de login e recebe a 'page' de volta.
@@ -66,8 +68,8 @@ def executar_rpa(lista_processos: list, funcao_de_atualizacao=database.atualizar
         print(f"Ocorreu uma falha crítica na automação: {e}")
     finally:
         if browser:
-            print("3. Fechando navegador...")
-            navegador.fechar_navegador()
+            # A função agora recebe o objeto 'browser' para poder fechá-lo.
+            navegador.fechar_navegador(browser)
         print("--- EXECUÇÃO DO RPA FINALIZADA ---")
 
 if __name__ == "__main__":
