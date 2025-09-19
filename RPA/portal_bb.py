@@ -55,3 +55,28 @@ def fazer_login(context: BrowserContext, url_extensao: str) -> Page:
     except Exception as e:
         print(f"\n❌ FALHA inesperada durante o login: {e}")
         raise e
+
+def verificar_e_renovar_sessao(page: Page, context: BrowserContext, url_extensao: str) -> Page:
+    """
+    Verifica se a sessão do usuário ainda está ativa. Se não estiver,
+    tenta fazer o login novamente.
+    """
+    try:
+        # Verifica a presença do elemento que confirma o login, com um timeout curto.
+        page.locator("#aPaginaInicial").wait_for(state="visible", timeout=5000)
+        print("✔️ Sessão ativa. Continuando o processo.")
+        return page
+    except TimeoutError:
+        print("\n⚠️ Sessão expirada ou inválida! Iniciando processo de re-login...")
+        try:
+            # Fecha a página antiga para evitar conflitos
+            if not page.is_closed():
+                page.close()
+
+            # Chama a função de login para obter uma nova página/sessão
+            nova_page = fazer_login(context, url_extensao)
+            print("✔️ Re-login realizado com sucesso!")
+            return nova_page
+        except Exception as e:
+            print(f"\n❌ FALHA CRÍTICA no processo de re-login: {e}")
+            raise  # Propaga a exceção para que o RPA principal possa parar.
