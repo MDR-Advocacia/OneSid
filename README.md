@@ -74,3 +74,4 @@ O script executará os seguintes comandos:
   - **Painel (Front-end):** `npm start` dentro da pasta `painel-rpa`
 
 Após a execução, o painel será aberto automaticamente no seu navegador, geralmente em `http://localhost:3000`.
+
