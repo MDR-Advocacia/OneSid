@@ -65,3 +65,16 @@ export async function importFromLegalOne() {
     });
     return handleResponse(response);
 }
+
+export async function exportToJson() {
+    const response = await fetch(`${API_BASE_URL}/exportar-json`, {
+        method: 'GET', // Usamos GET pois estamos apenas solicitando dados
+        credentials: 'include',
+    });
+    // Aqui não usamos handleResponse porque queremos o JSON completo, mesmo em caso de erro
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
+    }
+    return response.json(); // Retorna os dados JSON
+}

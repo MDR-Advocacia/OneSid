@@ -268,3 +268,7 @@ tbody tr:hover {
 .link-button:hover {
   color: #ffffff;
 }
+
+.export-container p {
+  margin-bottom: 1.5rem; /* Adiciona um espaço extra no card de exportação */
+}

@@ -24,8 +24,19 @@ def inicializar_banco():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     # --- ALTERAÇÃO AQUI ---
-    # Removemos o "UNIQUE" da coluna numero_processo para permitir duplicatas
-    cursor.execute('''CREATE TABLE IF NOT EXISTS processos (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_processo TEXT, data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP, data_ultima_atualizacao TIMESTAMP, responsavel_principal TEXT, classificacao TEXT)''')
+    # Adicionamos a coluna 'id_responsavel'
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            numero_processo TEXT, 
+            data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+            data_ultima_atualizacao TIMESTAMP, 
+            responsavel_principal TEXT, 
+            classificacao TEXT,
+            tarefa_id INTEGER UNIQUE,
+            id_responsavel INTEGER
+        )
+    ''')
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS subsidios_atuais (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_processo TEXT, item TEXT, status TEXT, data_atualizacao TIMESTAMP, UNIQUE(numero_processo, item))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS itens_relevantes (id INTEGER PRIMARY KEY AUTOINCREMENT, item_nome TEXT UNIQUE)''')
@@ -40,11 +51,10 @@ def inicializar_banco():
     conn.close()
     print("✔️ Banco de dados (re)inicializado com a estrutura de visualização por usuário.")
 
-# --- NOVA FUNÇÃO ADICIONADA (SUBSTITUI A ANTERIOR) ---
-def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str):
+# --- FUNÇÃO MODIFICADA ---
+def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str, tarefa_id: int = None, id_responsavel: int = None):
     """
-    SEMPRE INSERE um novo registro de processo para monitoramento.
-    Cada chamada a esta função cria uma nova linha, permitindo processos repetidos com executantes diferentes.
+    Insere um novo registro de processo, agora também salvando o id_responsavel.
     """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -52,25 +62,18 @@ def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: 
     numero_limpo = _limpar_numero(numero_processo)
     
     try:
-        # 1. Insere um novo registro na tabela 'processos' SEMPRE.
         cursor.execute(
-            "INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao) VALUES (?, ?, ?)", 
-            (numero_limpo, executante, agora)
+            "INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao, tarefa_id, id_responsavel) VALUES (?, ?, ?, ?, ?)", 
+            (numero_limpo, executante, agora, tarefa_id, id_responsavel)
         )
         process_id = cursor.lastrowid
-
-        # 2. Associa o novo registro de processo ao usuário na tabela 'user_process_view'
         if process_id and user_id:
-            cursor.execute(
-                """
-                INSERT INTO user_process_view (user_id, process_id, status_visualizacao) 
-                VALUES (?, ?, 'monitorando')
-                """, (user_id, process_id)
-            )
-        
+            cursor.execute( "INSERT INTO user_process_view (user_id, process_id, status_visualizacao) VALUES (?, ?, 'monitorando')", (user_id, process_id) )
         conn.commit()
         return process_id
-
+    except sqlite3.IntegrityError:
+        print(f"Tarefa ID {tarefa_id} já existe no banco. Ignorando.")
+        return None
     except Exception as e:
         print(f"Erro em adicionar_processo_unitario: {e}")
         conn.rollback()
@@ -78,9 +81,49 @@ def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: 
     finally:
         conn.close()
 
+# --- NOVA FUNÇÃO DE EXPORTAÇÃO ---
+def exportar_dados_json():
+    """
+    Busca todos os processos ativos e seus subsídios, e formata para o JSON de exportação.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Busca os processos base que estão sendo monitorados
+    cursor.execute("""
+        SELECT 
+            p.id, p.numero_processo, p.id_responsavel
+        FROM processos p 
+        JOIN user_process_view v ON p.id = v.process_id 
+        WHERE v.status_visualizacao = 'monitorando'
+        GROUP BY p.id
+    """)
+    processos_base = cursor.fetchall()
+    
+    lista_de_processos_export = []
+    
+    for processo in processos_base:
+        # Para cada processo, busca seus subsídios
+        cursor.execute("SELECT item, status FROM subsidios_atuais WHERE numero_processo = ?", (processo['numero_processo'],))
+        subsidios = cursor.fetchall()
+        
+        # Cria uma entrada no JSON para cada subsídio encontrado
+        for subsidio in subsidios:
+            # Formata a string de observação conforme o exemplo
+            observacao = f"PROATIVO: {subsidio['item']} ({subsidio['status'].upper()})."
+            
+            processo_formatado = {
+                "numero_processo": processo['numero_processo'],
+                "id_responsavel": processo['id_responsavel'],
+                "observacao do subsídio": observacao
+            }
+            lista_de_processos_export.append(processo_formatado)
+            
+    conn.close()
+    return lista_de_processos_export
 
-# --- O RESTANTE DAS FUNÇÕES PERMANECE O MESMO ---
-
+# (O restante do arquivo continua o mesmo)
 def adicionar_usuario(username, password, role='user'):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -112,14 +155,10 @@ def listar_todos_usuarios():
     return [dict(row) for row in cursor.fetchall()]
 
 def associar_processos_usuario(user_id: int, processos_com_dados: list):
-    # Esta função era para a inserção em lote antiga, a nova lógica usa adicionar_processo_unitario
     conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    agora = datetime.datetime.now()
     for processo_info in processos_com_dados:
         adicionar_processo_unitario(user_id, processo_info['numero'], processo_info['responsavel'])
     conn.close()
-
 
 def _todos_relevantes_satisfeitos(processo_id, usuario_id):
     conn = sqlite3.connect(DB_NAME)
@@ -195,7 +234,6 @@ def buscar_painel_usuario(user_id: int):
 def buscar_processos_em_monitoramento_geral() -> list:
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # Esta query agora pode retornar números de processo duplicados, o que é esperado pela lógica do robô
     cursor.execute("SELECT p.numero_processo FROM processos p JOIN user_process_view v ON p.id = v.process_id WHERE v.status_visualizacao = 'monitorando'")
     return [row[0] for row in cursor.fetchall()]
 

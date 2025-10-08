@@ -1,23 +1,5 @@
 [
   {
-    "tarefa_id": 111849,
-    "tarefa_assunto": null,
-    "data_conclusao": null,
-    "processo_id": 48718,
-    "processo_cnj": "0840867-65.2024.8.20.5001",
-    "finalizado_por_id": 25,
-    "finalizado_por_nome": "Jonilson Vilela Cid Júnior"
-  },
-  {
-    "tarefa_id": 111850,
-    "tarefa_assunto": null,
-    "data_conclusao": null,
-    "processo_id": 48718,
-    "processo_cnj": "0840867-65.2024.8.20.5001",
-    "finalizado_por_id": null,
-    "finalizado_por_nome": null
-  },
-  {
     "tarefa_id": 112241,
     "tarefa_assunto": null,
     "data_conclusao": null,
