@@ -1,10 +1,14 @@
+# Substitua todo o conteúdo de bd/database.py por este código:
+
 import sqlite3
 import datetime
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
 import unicodedata
+import os
 
-DB_NAME = 'rpa_dados.db'
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+DB_NAME = os.path.join(PROJECT_ROOT, 'rpa_dados.db')
 
 def _limpar_numero(numero_processo_bruto: str) -> str:
     return re.sub(r'\D', '', numero_processo_bruto)
@@ -82,121 +86,88 @@ def associar_processos_usuario(user_id: int, processos_com_dados: list):
     conn.close()
 
 def _todos_relevantes_satisfeitos(processo_id, usuario_id):
-    """
-    Verifica se todos os subsídios relevantes para o usuário, que estão presentes
-    em um determinado processo, foram concluídos. (VERSÃO DE DEBUG CORRIGIDA)
-    """
-    # Esta função agora se conecta ao banco de forma independente
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-
     try:
-        print(f"\n--- [DEBUG] Iniciando verificação para processo_id: {processo_id}, usuario_id: {usuario_id} ---")
-
-        # 1. Pega os NOMES dos itens que o usuário marcou como relevantes
-        cursor.execute("""
-            SELECT ir.item_nome
-            FROM user_item_preferences uip
-            JOIN itens_relevantes ir ON uip.item_id = ir.id
-            WHERE uip.user_id = ? AND uip.is_enabled = 1
-        """, (usuario_id,))
+        cursor.execute("SELECT ir.item_nome FROM user_item_preferences uip JOIN itens_relevantes ir ON uip.item_id = ir.id WHERE uip.user_id = ? AND uip.is_enabled = 1", (usuario_id,))
         preferencias_relevantes_nomes = {row[0] for row in cursor.fetchall()}
-        print(f"[DEBUG] Itens relevantes para o usuário: {preferencias_relevantes_nomes}")
-
-        if not preferencias_relevantes_nomes:
-            print("[DEBUG] Usuário não tem itens de interesse. Fim da verificação.")
-            return False
-
-        # 2. Pega os NOMES de todos os itens que existem NESTE processo
-        cursor.execute("""
-            SELECT item
-            FROM subsidios_atuais
-            WHERE numero_processo = (SELECT numero_processo FROM processos WHERE id = ?)
-        """, (processo_id,))
+        if not preferencias_relevantes_nomes: return False
+        cursor.execute("SELECT item FROM subsidios_atuais WHERE numero_processo = (SELECT numero_processo FROM processos WHERE id = ?)", (processo_id,))
         itens_no_processo_nomes = {row[0] for row in cursor.fetchall()}
-        print(f"[DEBUG] Itens existentes neste processo: {itens_no_processo_nomes}")
-
-        # 3. Descobre quais dos itens de interesse do usuário REALMENTE ESTÃO no processo atual
         relevantes_neste_processo_nomes = preferencias_relevantes_nomes.intersection(itens_no_processo_nomes)
-        print(f"[DEBUG] Itens que são relevantes E estão no processo: {relevantes_neste_processo_nomes}")
-
-        if not relevantes_neste_processo_nomes:
-            print("[DEBUG] Nenhum item de interesse deste usuário foi encontrado no processo. Fim da verificação.")
-            return False
-
-        # 4. Pega os NOMES dos subsídios CONCLUÍDOS para este processo
-        cursor.execute("""
-            SELECT item
-            FROM subsidios_atuais
-            WHERE numero_processo = (SELECT numero_processo FROM processos WHERE id = ?)
-            AND (status LIKE 'Concluído' OR status LIKE 'Concluido')
-        """, (processo_id,))
+        if not relevantes_neste_processo_nomes: return False
+        cursor.execute("SELECT item FROM subsidios_atuais WHERE numero_processo = (SELECT numero_processo FROM processos WHERE id = ?) AND (status LIKE 'Concluído' OR status LIKE 'Concluido')", (processo_id,))
         subsidios_concluidos_nomes = {row[0] for row in cursor.fetchall()}
-        print(f"[DEBUG] Subsídios concluídos neste processo: {subsidios_concluidos_nomes}")
-
-        # 5. A condição final: Todos os itens relevantes que estão no processo foram concluídos?
-        resultado = relevantes_neste_processo_nomes.issubset(subsidios_concluidos_nomes)
-        print(f"[DEBUG] A verificação '{relevantes_neste_processo_nomes}.issubset({subsidios_concluidos_nomes})' resultou em: {resultado}")
-        print(f"--- [DEBUG] Fim da verificação. Resultado Final: {resultado} ---\n")
-
-        return resultado
+        return relevantes_neste_processo_nomes.issubset(subsidios_concluidos_nomes)
     finally:
-        # Garante que a conexão com o banco seja sempre fechada
         conn.close()
 
-
 def atualizar_status_para_usuarios(numero_processo: str, lista_subsidios: list):
-    """
-    Função corrigida para chamar a verificação de status da maneira certa.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     agora = datetime.datetime.now()
     numero_processo_limpo = _limpar_numero(numero_processo)
-
-    # Atualiza a tabela de subsídios com os dados mais recentes do robô
     for subsidio in lista_subsidios:
         cursor.execute("INSERT INTO subsidios_atuais (numero_processo, item, status, data_atualizacao) VALUES (?, ?, ?, ?) ON CONFLICT(numero_processo, item) DO UPDATE SET status=excluded.status, data_atualizacao=excluded.data_atualizacao", (numero_processo_limpo, subsidio['item'], subsidio['status'], agora))
-    
     cursor.execute("UPDATE processos SET data_ultima_atualizacao = ? WHERE numero_processo = ?", (agora, numero_processo_limpo))
     conn.commit()
-
-    # Pega o ID do processo que acabamos de atualizar
     cursor.execute("SELECT id FROM processos WHERE numero_processo = ?", (numero_processo_limpo,))
     process_row = cursor.fetchone()
     if not process_row: 
         conn.close()
         return
     process_id = process_row[0]
-
-    # Pega todos os usuários que estão monitorando este processo
     cursor.execute("SELECT user_id FROM user_process_view WHERE process_id = ? AND status_visualizacao = 'monitorando'", (process_id,))
     user_ids_monitorando = [row[0] for row in cursor.fetchall()]
-
-    # Para cada usuário, faz a verificação para ver se o status deve mudar
     for user_id in user_ids_monitorando:
-        # AQUI ESTÁ A CHAMADA CORRIGIDA:
         if _todos_relevantes_satisfeitos(process_id, user_id):
             cursor.execute("UPDATE user_process_view SET status_visualizacao = 'pendente_ciencia' WHERE user_id = ? AND process_id = ?", (user_id, process_id))
-            print(f"  -> Processo {numero_processo_limpo} agora está 'Pendente Ciência' para o usuário ID {user_id}.")
-    
     conn.commit()
     conn.close()
-
     
-def marcar_ciencia_usuario(user_id: int, numero_processo: str):
+# --- FUNÇÃO MODIFICADA ---
+def marcar_ciencia_global(numero_processo: str):
+    """
+    Marca um processo como 'arquivado' para TODOS os usuários que o monitoram.
+    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     numero_processo_limpo = _limpar_numero(numero_processo)
-    cursor.execute("UPDATE user_process_view SET status_visualizacao = 'arquivado' WHERE user_id = ? AND process_id = (SELECT id FROM processos WHERE numero_processo = ?)", (user_id, numero_processo_limpo))
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute("""
+            UPDATE user_process_view 
+            SET status_visualizacao = 'arquivado' 
+            WHERE process_id = (SELECT id FROM processos WHERE numero_processo = ?)
+        """, (numero_processo_limpo,))
+        conn.commit()
+    finally:
+        conn.close()
 
+# --- FUNÇÃO MODIFICADA ---
 def buscar_painel_usuario(user_id: int):
+    """
+    Busca TODOS os processos ativos ('monitorando' ou 'pendente_ciencia') 
+    para exibir no painel unificado. O user_id não é mais usado para filtrar.
+    """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT p.id, p.numero_processo, p.responsavel_principal, p.classificacao, p.data_ultima_atualizacao, v.status_visualizacao AS status_geral FROM processos p JOIN user_process_view v ON p.id = v.process_id WHERE v.user_id = ? AND v.status_visualizacao IN ('monitorando', 'pendente_ciencia') ORDER BY p.data_ultima_atualizacao DESC", (user_id,))
+    # A query agora busca todos os processos ativos, sem o filtro de user_id.
+    # Usamos GROUP BY para garantir que cada processo apareça apenas uma vez.
+    cursor.execute("""
+        SELECT 
+            p.id, 
+            p.numero_processo, 
+            p.responsavel_principal, 
+            p.classificacao, 
+            p.data_ultima_atualizacao, 
+            MIN(v.status_visualizacao) AS status_geral 
+        FROM processos p 
+        JOIN user_process_view v ON p.id = v.process_id 
+        WHERE v.status_visualizacao IN ('monitorando', 'pendente_ciencia') 
+        GROUP BY p.id
+        ORDER BY p.data_ultima_atualizacao DESC
+    """)
     dados_painel = [dict(row) for row in cursor.fetchall()]
     for processo in dados_painel:
         cursor.execute("SELECT item, status FROM subsidios_atuais WHERE numero_processo = ? ORDER BY id", (processo['numero_processo'],))
@@ -234,10 +205,8 @@ def salvar_itens_relevantes(itens: list):
         if itens_tuplas:
             cursor.executemany("INSERT INTO itens_relevantes (item_nome) VALUES (?)", itens_tuplas)
         conn.commit()
-        print(f"✔️ Lista de itens relevantes salva com {len(itens_unicos)} itens únicos.")
     except Exception as e:
         conn.rollback()
-        print(f"❌ Erro ao salvar itens relevantes: {e}")
     finally:
         conn.close()
 
@@ -255,6 +224,31 @@ def atualizar_preferencia_usuario(user_id: int, item_id: int, is_enabled: bool):
     cursor.execute("UPDATE user_item_preferences SET is_enabled = ? WHERE user_id = ? AND item_id = ?", (1 if is_enabled else 0, user_id, item_id))
     conn.commit()
     conn.close()
+
+def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    agora = datetime.datetime.now()
+    numero_limpo = _limpar_numero(numero_processo)
+    try:
+        cursor.execute("SELECT id FROM processos WHERE numero_processo = ?", (numero_limpo,))
+        processo_existente = cursor.fetchone()
+        process_id = None
+        if processo_existente:
+            process_id = processo_existente[0]
+            cursor.execute("UPDATE processos SET responsavel_principal = ?, data_ultima_atualizacao = ? WHERE id = ?", (executante, agora, process_id))
+        else:
+            cursor.execute("INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao) VALUES (?, ?, ?)", (numero_limpo, executante, agora))
+            process_id = cursor.lastrowid
+        if process_id and user_id:
+            cursor.execute("INSERT INTO user_process_view (user_id, process_id, status_visualizacao) VALUES (?, ?, 'monitorando') ON CONFLICT(user_id, process_id) DO UPDATE SET status_visualizacao = 'monitorando';", (user_id, process_id))
+        conn.commit()
+        return process_id
+    except Exception as e:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     inicializar_banco()

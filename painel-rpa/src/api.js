@@ -1,66 +1,67 @@
-const API_BASE_URL = 'http://192.168.0.65:5000'; // Ou o endereço do seu backend
+// Substitua todo o conteúdo de painel-rpa/src/api.js por este código:
 
-// Função auxiliar para fazer requisições autenticadas
-const fetchAuth = async (url, options = {}) => {
-    const token = localStorage.getItem('userToken');
-    const headers = {
-        'Content-Type': 'application/json',
-        ...options.headers,
-    };
+const API_BASE_URL = 'http://localhost:5000/api';
 
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE_URL}${url}`, { ...options, headers });
-
+// Função auxiliar para lidar com as respostas da API
+async function handleResponse(response) {
+    const data = await response.json();
     if (!response.ok) {
-        // Tenta extrair uma mensagem de erro do backend
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.msg || `HTTP error! status: ${response.status}`);
+        throw new Error(data.message || `Erro HTTP: ${response.status}`);
     }
+    return data;
+}
 
-    return response.json();
-};
-
-// --- Funções da API ---
-
-export const login = (username, password) => {
-    return fetchAuth('/login', {
+// --- Funções de Autenticação ---
+export async function login(username, password) {
+    // Adicionamos 'credentials: "include"' para que o navegador envie e receba cookies
+    const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
     });
-};
+    return handleResponse(response);
+}
 
-export const getPainelData = () => fetchAuth('/painel');
-
-export const getHistoryData = () => fetchAuth('/historico');
-
-export const runMonitoring = () => fetchAuth('/run-monitoring', { method: 'POST' });
-
-export const archiveProcess = (numero_processo) => {
-    return fetchAuth('/arquivar-processo', {
+export async function logout() {
+    const response = await fetch(`${API_BASE_URL}/logout`, { 
         method: 'POST',
-        body: JSON.stringify({ numero_processo }),
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
     });
-};
+    return handleResponse(response);
+}
 
-// --- API de Itens para ADMIN ---
-export const getItensRelevantesAdmin = () => fetchAuth('/itens-relevantes');
+export async function checkLoginStatus() {
+    const response = await fetch(`${API_BASE_URL}/profile`, {
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
+    });
+    return handleResponse(response);
+}
 
-export const saveItensRelevantesAdmin = (itens) => {
-    return fetchAuth('/itens-relevantes', {
+
+// --- Funções de Processos ---
+export async function fetchPainelData() {
+    const response = await fetch(`${API_BASE_URL}/painel`, {
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
+    });
+    return handleResponse(response);
+}
+
+export async function addSingleProcess(processData) {
+    const response = await fetch(`${API_BASE_URL}/add-process`, {
         method: 'POST',
-        body: JSON.stringify({ itens }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(processData),
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
     });
-};
+    return handleResponse(response);
+}
 
-// --- API de Itens para USUÁRIO ---
-export const getPreferenciasUsuario = () => fetchAuth('/preferencias-usuario');
-
-export const updatePreferenciaUsuario = (item_id, is_enabled) => {
-    return fetchAuth('/preferencias-usuario', {
-        method: 'PUT',
-        body: JSON.stringify({ item_id, is_enabled }),
+export async function importFromLegalOne() {
+    const response = await fetch(`${API_BASE_URL}/import-legal-one`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
     });
-};
+    return handleResponse(response);
+}
