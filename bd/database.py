@@ -23,7 +23,10 @@ def _normalize_string(text: str) -> str:
 def inicializar_banco():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS processos (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_processo TEXT UNIQUE, data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP, data_ultima_atualizacao TIMESTAMP, responsavel_principal TEXT, classificacao TEXT)''')
+    # --- ALTERAÇÃO AQUI ---
+    # Removemos o "UNIQUE" da coluna numero_processo para permitir duplicatas
+    cursor.execute('''CREATE TABLE IF NOT EXISTS processos (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_processo TEXT, data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP, data_ultima_atualizacao TIMESTAMP, responsavel_principal TEXT, classificacao TEXT)''')
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS subsidios_atuais (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_processo TEXT, item TEXT, status TEXT, data_atualizacao TIMESTAMP, UNIQUE(numero_processo, item))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS itens_relevantes (id INTEGER PRIMARY KEY AUTOINCREMENT, item_nome TEXT UNIQUE)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user')''')
@@ -36,6 +39,47 @@ def inicializar_banco():
         adicionar_usuario("mdr", "mdr.123")
     conn.close()
     print("✔️ Banco de dados (re)inicializado com a estrutura de visualização por usuário.")
+
+# --- NOVA FUNÇÃO ADICIONADA (SUBSTITUI A ANTERIOR) ---
+def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str):
+    """
+    SEMPRE INSERE um novo registro de processo para monitoramento.
+    Cada chamada a esta função cria uma nova linha, permitindo processos repetidos com executantes diferentes.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    agora = datetime.datetime.now()
+    numero_limpo = _limpar_numero(numero_processo)
+    
+    try:
+        # 1. Insere um novo registro na tabela 'processos' SEMPRE.
+        cursor.execute(
+            "INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao) VALUES (?, ?, ?)", 
+            (numero_limpo, executante, agora)
+        )
+        process_id = cursor.lastrowid
+
+        # 2. Associa o novo registro de processo ao usuário na tabela 'user_process_view'
+        if process_id and user_id:
+            cursor.execute(
+                """
+                INSERT INTO user_process_view (user_id, process_id, status_visualizacao) 
+                VALUES (?, ?, 'monitorando')
+                """, (user_id, process_id)
+            )
+        
+        conn.commit()
+        return process_id
+
+    except Exception as e:
+        print(f"Erro em adicionar_processo_unitario: {e}")
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+# --- O RESTANTE DAS FUNÇÕES PERMANECE O MESMO ---
 
 def adicionar_usuario(username, password, role='user'):
     conn = sqlite3.connect(DB_NAME)
@@ -68,22 +112,14 @@ def listar_todos_usuarios():
     return [dict(row) for row in cursor.fetchall()]
 
 def associar_processos_usuario(user_id: int, processos_com_dados: list):
+    # Esta função era para a inserção em lote antiga, a nova lógica usa adicionar_processo_unitario
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     agora = datetime.datetime.now()
     for processo_info in processos_com_dados:
-        numero_limpo = _limpar_numero(processo_info['numero'])
-        cursor.execute("SELECT id FROM processos WHERE numero_processo = ?", (numero_limpo,))
-        processo_existente = cursor.fetchone()
-        if processo_existente:
-            process_id = processo_existente[0]
-            cursor.execute("UPDATE processos SET responsavel_principal = ?, classificacao = ? WHERE id = ?", (processo_info['responsavel'], processo_info['classificacao'], process_id))
-        else:
-            cursor.execute("INSERT INTO processos (numero_processo, responsavel_principal, classificacao, data_ultima_atualizacao) VALUES (?, ?, ?, ?)", (numero_limpo, processo_info['responsavel'], processo_info['classificacao'], agora))
-            process_id = cursor.lastrowid
-        cursor.execute("INSERT INTO user_process_view (user_id, process_id, status_visualizacao) VALUES (?, ?, 'monitorando') ON CONFLICT(user_id, process_id) DO UPDATE SET status_visualizacao = 'monitorando';", (user_id, process_id))
-    conn.commit()
+        adicionar_processo_unitario(user_id, processo_info['numero'], processo_info['responsavel'])
     conn.close()
+
 
 def _todos_relevantes_satisfeitos(processo_id, usuario_id):
     conn = sqlite3.connect(DB_NAME)
@@ -125,43 +161,24 @@ def atualizar_status_para_usuarios(numero_processo: str, lista_subsidios: list):
     conn.commit()
     conn.close()
     
-# --- FUNÇÃO MODIFICADA ---
 def marcar_ciencia_global(numero_processo: str):
-    """
-    Marca um processo como 'arquivado' para TODOS os usuários que o monitoram.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     numero_processo_limpo = _limpar_numero(numero_processo)
     try:
-        cursor.execute("""
-            UPDATE user_process_view 
-            SET status_visualizacao = 'arquivado' 
-            WHERE process_id = (SELECT id FROM processos WHERE numero_processo = ?)
-        """, (numero_processo_limpo,))
+        cursor.execute("UPDATE user_process_view SET status_visualizacao = 'arquivado' WHERE process_id = (SELECT id FROM processos WHERE numero_processo = ?)", (numero_processo_limpo,))
         conn.commit()
     finally:
         conn.close()
 
-# --- FUNÇÃO MODIFICADA ---
 def buscar_painel_usuario(user_id: int):
-    """
-    Busca TODOS os processos ativos ('monitorando' ou 'pendente_ciencia') 
-    para exibir no painel unificado. O user_id não é mais usado para filtrar.
-    """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    # A query agora busca todos os processos ativos, sem o filtro de user_id.
-    # Usamos GROUP BY para garantir que cada processo apareça apenas uma vez.
     cursor.execute("""
         SELECT 
-            p.id, 
-            p.numero_processo, 
-            p.responsavel_principal, 
-            p.classificacao, 
-            p.data_ultima_atualizacao, 
-            MIN(v.status_visualizacao) AS status_geral 
+            p.id, p.numero_processo, p.responsavel_principal, p.classificacao, 
+            p.data_ultima_atualizacao, MIN(v.status_visualizacao) AS status_geral 
         FROM processos p 
         JOIN user_process_view v ON p.id = v.process_id 
         WHERE v.status_visualizacao IN ('monitorando', 'pendente_ciencia') 
@@ -178,7 +195,8 @@ def buscar_painel_usuario(user_id: int):
 def buscar_processos_em_monitoramento_geral() -> list:
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT p.numero_processo FROM processos p JOIN user_process_view v ON p.id = v.process_id WHERE v.status_visualizacao = 'monitorando'")
+    # Esta query agora pode retornar números de processo duplicados, o que é esperado pela lógica do robô
+    cursor.execute("SELECT p.numero_processo FROM processos p JOIN user_process_view v ON p.id = v.process_id WHERE v.status_visualizacao = 'monitorando'")
     return [row[0] for row in cursor.fetchall()]
 
 def buscar_historico_usuario(user_id: int):
@@ -224,31 +242,6 @@ def atualizar_preferencia_usuario(user_id: int, item_id: int, is_enabled: bool):
     cursor.execute("UPDATE user_item_preferences SET is_enabled = ? WHERE user_id = ? AND item_id = ?", (1 if is_enabled else 0, user_id, item_id))
     conn.commit()
     conn.close()
-
-def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    agora = datetime.datetime.now()
-    numero_limpo = _limpar_numero(numero_processo)
-    try:
-        cursor.execute("SELECT id FROM processos WHERE numero_processo = ?", (numero_limpo,))
-        processo_existente = cursor.fetchone()
-        process_id = None
-        if processo_existente:
-            process_id = processo_existente[0]
-            cursor.execute("UPDATE processos SET responsavel_principal = ?, data_ultima_atualizacao = ? WHERE id = ?", (executante, agora, process_id))
-        else:
-            cursor.execute("INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao) VALUES (?, ?, ?)", (numero_limpo, executante, agora))
-            process_id = cursor.lastrowid
-        if process_id and user_id:
-            cursor.execute("INSERT INTO user_process_view (user_id, process_id, status_visualizacao) VALUES (?, ?, 'monitorando') ON CONFLICT(user_id, process_id) DO UPDATE SET status_visualizacao = 'monitorando';", (user_id, process_id))
-        conn.commit()
-        return process_id
-    except Exception as e:
-        conn.rollback()
-        return None
-    finally:
-        conn.close()
 
 if __name__ == '__main__':
     inicializar_banco()
