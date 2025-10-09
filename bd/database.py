@@ -23,8 +23,6 @@ def _normalize_string(text: str) -> str:
 def inicializar_banco():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # --- ALTERAÇÃO AQUI ---
-    # Adicionamos a coluna 'id_responsavel'
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -51,16 +49,11 @@ def inicializar_banco():
     conn.close()
     print("✔️ Banco de dados (re)inicializado com a estrutura de visualização por usuário.")
 
-# --- FUNÇÃO MODIFICADA ---
 def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str, tarefa_id: int = None, id_responsavel: int = None):
-    """
-    Insere um novo registro de processo, agora também salvando o id_responsavel.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     agora = datetime.datetime.now()
     numero_limpo = _limpar_numero(numero_processo)
-    
     try:
         cursor.execute(
             "INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao, tarefa_id, id_responsavel) VALUES (?, ?, ?, ?, ?)", 
@@ -81,14 +74,19 @@ def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: 
     finally:
         conn.close()
 
-# --- NOVA FUNÇÃO DE EXPORTAÇÃO ---
+# --- FUNÇÃO DE EXPORTAÇÃO MODIFICADA ---
 def exportar_dados_json():
     """
-    Busca todos os processos ativos e seus subsídios, e formata para o JSON de exportação.
+    Busca os dados e agrupa as observações por numero_processo e id_responsavel.
     """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    
+    # Dicionário para agrupar as observações
+    # A chave será uma tupla (numero_processo, id_responsavel)
+    # O valor será uma lista de strings de observação
+    processos_agrupados = {}
     
     # Busca os processos base que estão sendo monitorados
     cursor.execute("""
@@ -97,30 +95,42 @@ def exportar_dados_json():
         FROM processos p 
         JOIN user_process_view v ON p.id = v.process_id 
         WHERE v.status_visualizacao = 'monitorando'
-        GROUP BY p.id
     """)
     processos_base = cursor.fetchall()
     
-    lista_de_processos_export = []
-    
     for processo in processos_base:
+        chave_agrupamento = (processo['numero_processo'], processo['id_responsavel'])
+        
+        # Se a chave ainda não existe no dicionário, inicializa
+        if chave_agrupamento not in processos_agrupados:
+            processos_agrupados[chave_agrupamento] = {
+                "numero_processo": processo['numero_processo'],
+                "id_responsavel": processo['id_responsavel'],
+                "observacoes": [] # Usamos uma lista temporária
+            }
+
         # Para cada processo, busca seus subsídios
         cursor.execute("SELECT item, status FROM subsidios_atuais WHERE numero_processo = ?", (processo['numero_processo'],))
         subsidios = cursor.fetchall()
         
-        # Cria uma entrada no JSON para cada subsídio encontrado
         for subsidio in subsidios:
-            # Formata a string de observação conforme o exemplo
             observacao = f"PROATIVO: {subsidio['item']} ({subsidio['status'].upper()})."
-            
-            processo_formatado = {
-                "numero_processo": processo['numero_processo'],
-                "id_responsavel": processo['id_responsavel'],
-                "observacao do subsídio": observacao
-            }
-            lista_de_processos_export.append(processo_formatado)
-            
+            processos_agrupados[chave_agrupamento]["observacoes"].append(observacao)
+
     conn.close()
+
+    # Monta a lista final a partir dos dados agrupados
+    lista_de_processos_export = []
+    for grupo in processos_agrupados.values():
+        # Junta todas as observações da lista com " ; "
+        observacao_final = " ; ".join(grupo["observacoes"])
+        
+        lista_de_processos_export.append({
+            "numero_processo": grupo["numero_processo"],
+            "id_responsavel": grupo["id_responsavel"],
+            "observacao": observacao_final
+        })
+        
     return lista_de_processos_export
 
 # (O restante do arquivo continua o mesmo)
