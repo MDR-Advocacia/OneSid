@@ -1,4 +1,4 @@
-# apexFluxoLegalOne.py
+# Substitua todo o conteúdo de RPA/apexFluxoLegalOne.py por este código:
 
 import requests
 import os
@@ -21,9 +21,6 @@ auth_token_cache = {
 }
 
 def get_access_token():
-    """
-    Verifica se o token atual é válido e, se não for, gera um novo.
-    """
     if auth_token_cache["token"] and datetime.now(UTC) < auth_token_cache["expires_at"] - timedelta(seconds=60):
         return auth_token_cache["token"]
 
@@ -45,59 +42,68 @@ def get_access_token():
         print(f"Erro CRÍTICO ao obter token: {e.response.status_code} - {e.response.text}")
         raise
 
-def make_api_request(url):
-    """
-    Função auxiliar para fazer uma requisição GET já com o cabeçalho de autenticação.
-    """
+def make_api_request(url, params):
     token = get_access_token()
     headers = {
         "Authorization": f"Bearer {token}"
     }
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, params=params)
     response.raise_for_status()
     return response.json()
 
 # --- 2. FUNÇÕES PARA BUSCAR OS DADOS ---
 
+# --- FUNÇÃO TOTALMENTE REESCRITA ---
 def get_all_tasks():
     """
-    Busca todas as tarefas vinculadas a processos, cuidando da paginação.
+    Busca os últimos 30 registros de cada tipo de tarefa especificada, 
+    filtrando apenas aquelas com status 'cumprido' (statusId: 1).
     """
-    print("Buscando tarefas (versão robusta)...")
+    print("Iniciando busca limitada de tarefas...")
+    
     all_tasks = []
     
-    params = {
-        "$filter": "typeId eq 26 and subTypeId eq 1131 and relationships/any(r: r/linkType eq 'Litigation')",
-        "$expand": "relationships"
-    }
-    
-    query_string = "&".join([f"{key}={value}" for key, value in params.items()])
-    next_link = f"{BASE_URL}/tasks?{query_string}"
+    # Lista dos diferentes tipos de tarefas que queremos buscar
+    tipos_de_tarefa = [
+        "(typeId eq 26 and subTypeId eq 1131)",
+        "(typeId eq 18 and subTypeId eq 961)",
+        "(typeId eq 18 and subTypeId eq 936)",
+        "(typeId eq 18 and subTypeId eq 984)"
+    ]
 
-    page_num = 1
-    while next_link:
+    # Loop para fazer uma requisição para cada tipo de tarefa
+    for tipo in tipos_de_tarefa:
+        print(f"\nBuscando os últimos 30 registros para o filtro: {tipo}")
+        
+        # Parâmetros para esta busca específica
+        params = {
+            "$filter": f"{tipo} and statusId eq 1 and relationships/any(r: r/linkType eq 'Litigation')",
+            "$expand": "relationships($select=id,linkId)",
+            "$select": "id,finishedBy,relationships",
+            "$top": 30,          # Limita aos 30 primeiros resultados
+            "$orderby": "id desc" # Ordena do mais recente para o mais antigo
+        }
+        
+        url = f"{BASE_URL}/tasks"
+        
         try:
-            print(f"Buscando página {page_num} de tarefas...")
-            data = make_api_request(next_link)
-            tasks_on_page = data.get("value", [])
-            all_tasks.extend(tasks_on_page)
-            
-            next_link = data.get("@odata.nextLink")
-            page_num += 1
+            data = make_api_request(url, params=params)
+            tasks_nesta_busca = data.get("value", [])
+            all_tasks.extend(tasks_nesta_busca)
+            print(f"-> Encontradas {len(tasks_nesta_busca)} tarefas.")
         except requests.exceptions.HTTPError as e:
-            print(f"Erro ao buscar página de tarefas: {e.response.text}")
-            break
+            print(f"-> Erro ao buscar tarefas para este filtro: {e.response.text}")
+            # Continua para o próximo tipo de tarefa mesmo se um falhar
+            continue
 
-    print(f"Total de {len(all_tasks)} tarefas encontradas.")
+    print(f"\nTotal de {len(all_tasks)} tarefas encontradas em todas as buscas.")
     return all_tasks
 
 def get_litigation_by_id(litigation_id):
-    """
-    Busca um processo pelo ID, mas retorna APENAS o campo 'identifierNumber'.
-    """
     url = f"{BASE_URL}/litigations/{litigation_id}?$select=identifierNumber"
     try:
-        return make_api_request(url)
+        # Passando um dicionário vazio de parâmetros
+        return make_api_request(url, params={})
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             print(f"AVISO: Processo com ID {litigation_id} não encontrado.")
@@ -105,19 +111,16 @@ def get_litigation_by_id(litigation_id):
             print(f"ERRO ao buscar processo {litigation_id}: {e.response.text}")
         return None
 
-# --- 3. EXECUÇÃO PRINCIPAL DO FLUXO ---
+# --- 3. EXECUÇÃO PRINCIPAL DO FLUXO (VERSÃO ENXUTA) ---
 def main():
-    """
-    Função principal que orquestra todo o fluxo.
-    """
     if not CLIENT_ID or not CLIENT_SECRET:
         print("Erro: As variáveis de ambiente não foram configuradas.")
-        return
+        return []
 
     tasks = get_all_tasks()
     if not tasks:
         print("Nenhuma tarefa para processar. Encerrando.")
-        return
+        return []
 
     final_results = []
 
@@ -128,19 +131,15 @@ def main():
         user_id = task.get('finishedBy')
         
         litigation_id = None
-        for rel in task.get('relationships', []):
-            if rel.get('linkType') == 'Litigation':
-                litigation_id = rel.get('linkId')
-                break
+        if task.get('relationships'):
+            litigation_id = task['relationships'][0].get('linkId')
         
         cnj_number = None
-        
         if litigation_id:
             litigation_data = get_litigation_by_id(litigation_id)
             if litigation_data:
                 cnj_number = litigation_data.get('identifierNumber')
-
-        # ✅ Objeto final agora está mais limpo
+        
         final_results.append({
             "tarefa_id": task_id,
             "processo_id": litigation_id,
@@ -155,7 +154,6 @@ def main():
         json.dump(final_results, f, indent=2, ensure_ascii=False)
     
     print(f"Resultados salvos com sucesso no arquivo: {nome_do_arquivo}")
-
     return final_results
 
 if __name__ == "__main__":
