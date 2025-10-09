@@ -77,39 +77,47 @@ def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: 
 # --- FUNÇÃO DE EXPORTAÇÃO MODIFICADA ---
 def exportar_dados_json():
     """
-    Busca os dados e agrupa as observações por numero_processo e id_responsavel.
+    Exporta os dados, mas apenas para processos que contenham PELO MENOS UM subsídio 'Concluído'.
     """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Dicionário para agrupar as observações
-    # A chave será uma tupla (numero_processo, id_responsavel)
-    # O valor será uma lista de strings de observação
     processos_agrupados = {}
     
-    # Busca os processos base que estão sendo monitorados
+    # 1. Busca os processos que estão em monitoramento
     cursor.execute("""
-        SELECT 
-            p.id, p.numero_processo, p.id_responsavel
+        SELECT p.id, p.numero_processo, p.id_responsavel
         FROM processos p 
         JOIN user_process_view v ON p.id = v.process_id 
         WHERE v.status_visualizacao = 'monitorando'
     """)
     processos_base = cursor.fetchall()
     
+    processos_para_exportar = []
+
+    # 2. Filtra apenas os processos que têm ao menos um subsídio concluído
     for processo in processos_base:
+        cursor.execute("""
+            SELECT 1 FROM subsidios_atuais 
+            WHERE numero_processo = ? AND (status LIKE 'Concluído' OR status LIKE 'Concluido')
+            LIMIT 1
+        """, (processo['numero_processo'],))
+        
+        if cursor.fetchone(): # Se encontrou pelo menos um, o processo é elegível
+            processos_para_exportar.append(processo)
+
+    # 3. Agrupa os dados para os processos elegíveis
+    for processo in processos_para_exportar:
         chave_agrupamento = (processo['numero_processo'], processo['id_responsavel'])
         
-        # Se a chave ainda não existe no dicionário, inicializa
         if chave_agrupamento not in processos_agrupados:
             processos_agrupados[chave_agrupamento] = {
                 "numero_processo": processo['numero_processo'],
                 "id_responsavel": processo['id_responsavel'],
-                "observacoes": [] # Usamos uma lista temporária
+                "observacoes": []
             }
 
-        # Para cada processo, busca seus subsídios
         cursor.execute("SELECT item, status FROM subsidios_atuais WHERE numero_processo = ?", (processo['numero_processo'],))
         subsidios = cursor.fetchall()
         
@@ -119,12 +127,10 @@ def exportar_dados_json():
 
     conn.close()
 
-    # Monta a lista final a partir dos dados agrupados
+    # 4. Monta a lista final
     lista_de_processos_export = []
     for grupo in processos_agrupados.values():
-        # Junta todas as observações da lista com " ; "
         observacao_final = " ; ".join(grupo["observacoes"])
-        
         lista_de_processos_export.append({
             "numero_processo": grupo["numero_processo"],
             "id_responsavel": grupo["id_responsavel"],
@@ -227,7 +233,8 @@ def buscar_painel_usuario(user_id: int):
     cursor.execute("""
         SELECT 
             p.id, p.numero_processo, p.responsavel_principal, p.classificacao, 
-            p.data_ultima_atualizacao, MIN(v.status_visualizacao) AS status_geral 
+            p.data_ultima_atualizacao, p.id_responsavel,
+            MIN(v.status_visualizacao) AS status_geral 
         FROM processos p 
         JOIN user_process_view v ON p.id = v.process_id 
         WHERE v.status_visualizacao IN ('monitorando', 'pendente_ciencia') 

@@ -59,16 +59,13 @@ def make_api_request(url):
 
 # --- 2. FUNÇÕES PARA BUSCAR OS DADOS ---
 
-# ✅ FUNÇÃO CORRIGIDA - VOLTAMOS A BUSCAR A TAREFA COMPLETA
 def get_all_tasks():
     """
     Busca todas as tarefas vinculadas a processos, cuidando da paginação.
-    Removemos o $select que estava causando erros.
     """
     print("Buscando tarefas (versão robusta)...")
     all_tasks = []
     
-    # Parâmetros como no original, sem $select, para garantir o funcionamento
     params = {
         "$filter": "typeId eq 26 and subTypeId eq 1131 and relationships/any(r: r/linkType eq 'Litigation')",
         "$expand": "relationships"
@@ -97,7 +94,6 @@ def get_all_tasks():
 def get_litigation_by_id(litigation_id):
     """
     Busca um processo pelo ID, mas retorna APENAS o campo 'identifierNumber'.
-    (Esta otimização funciona e será mantida)
     """
     url = f"{BASE_URL}/litigations/{litigation_id}?$select=identifierNumber"
     try:
@@ -132,7 +128,6 @@ def main():
         user_id = task.get('finishedBy')
         
         litigation_id = None
-        # A busca completa da tarefa retorna o relationships normalmente
         for rel in task.get('relationships', []):
             if rel.get('linkType') == 'Litigation':
                 litigation_id = rel.get('linkId')
@@ -144,16 +139,10 @@ def main():
             litigation_data = get_litigation_by_id(litigation_id)
             if litigation_data:
                 cnj_number = litigation_data.get('identifierNumber')
-        
-        # O campo 'subject' deve existir no objeto completo da tarefa.
-        # Se ele se chamar 'description', basta trocar aqui.
-        # Vamos usar 'subject' que estava no seu código original.
-        assunto_tarefa = task.get('subject') or task.get('description')
 
+        # ✅ Objeto final agora está mais limpo
         final_results.append({
             "tarefa_id": task_id,
-            "tarefa_assunto": assunto_tarefa,
-            "data_conclusao": task.get('finishedOn'),
             "processo_id": litigation_id,
             "processo_cnj": cnj_number,
             "finalizado_por_id": user_id,

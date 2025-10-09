@@ -7,7 +7,7 @@ import {
     checkLoginStatus,
     logout,
     importFromLegalOne,
-    exportToJson // Importamos a nova função
+    exportToJson
 } from './api';
 import LoginPage from './LoginPage';
 import './App.css';
@@ -45,8 +45,6 @@ function App() {
     const [executante, setExecutante] = useState('');
     const [isImporting, setIsImporting] = useState(false);
     const [selectedProcess, setSelectedProcess] = useState(null);
-
-    // --- NOVO ESTADO PARA EXPORTAÇÃO ---
     const [isExporting, setIsExporting] = useState(false);
 
     const checkAuth = async () => {
@@ -125,31 +123,21 @@ function App() {
         }
     };
 
-    // --- NOVA FUNÇÃO PARA EXPORTAR E BAIXAR O JSON ---
     const handleExport = async () => {
         setIsExporting(true);
         setMessage('Gerando arquivo JSON...');
         try {
             const data = await exportToJson();
-            
-            // Cria um "Blob" com os dados JSON
             const jsonString = JSON.stringify(data, null, 2);
             const blob = new Blob([jsonString], { type: 'application/json' });
-            
-            // Cria um link temporário para o download
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'export_onesid.json'; // Nome do arquivo
-            
-            // Simula o clique no link para iniciar o download
+            link.download = 'export_onesid.json';
             document.body.appendChild(link);
             link.click();
-            
-            // Limpa o link temporário
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-            
             setMessage('Arquivo JSON exportado com sucesso!');
         } catch (error) {
             setMessage(error.message || 'Ocorreu um erro ao exportar o JSON.');
@@ -184,17 +172,11 @@ function App() {
                                 <button type="submit">Adicionar à Esteira</button>
                             </form>
                         </div>
-
                         <div className="import-container card">
                             <h2>Ações em Lote</h2>
                             <p>Importe tarefas do Legal One ou exporte os dados de monitoramento.</p>
-                            <button onClick={handleImport} disabled={isImporting}>
-                                {isImporting ? 'Importando...' : 'Importar do Legal One'}
-                            </button>
-                            {/* BOTÃO DE EXPORTAR */}
-                            <button onClick={handleExport} disabled={isExporting}>
-                                {isExporting ? 'Exportando...' : 'Exportar JSON'}
-                            </button>
+                            <button onClick={handleImport} disabled={isImporting}>{isImporting ? 'Importando...' : 'Importar do Legal One'}</button>
+                            <button onClick={handleExport} disabled={isExporting}>{isExporting ? 'Exportando...' : 'Exportar JSON'}</button>
                         </div>
                     </div>
 
@@ -205,7 +187,14 @@ function App() {
                         {isLoading ? <p>Carregando...</p> : error ? <p className="error">{error}</p> : (
                             <table>
                                 <thead>
-                                    <tr><th>ID</th><th>Número do Processo</th><th>Responsável</th><th>Status</th><th>Última Verificação</th></tr>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Número do Processo</th>
+                                        {/* --- MUDANÇA NO TÍTULO DA COLUNA --- */}
+                                        <th>ID do Responsável</th>
+                                        <th>Status</th>
+                                        <th>Última Verificação</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {processos.length > 0 ? (
@@ -213,7 +202,8 @@ function App() {
                                             <tr key={`${p.id}-${p.numero_processo}`}>
                                                 <td>{p.id}</td>
                                                 <td><button className="link-button" onClick={() => setSelectedProcess(p)}>{p.numero_processo}</button></td>
-                                                <td>{p.responsavel_principal}</td>
+                                                {/* --- MUDANÇA NO DADO EXIBIDO --- */}
+                                                <td>{p.id_responsavel}</td>
                                                 <td>{p.status_geral}</td>
                                                 <td>{new Date(p.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
                                             </tr>
