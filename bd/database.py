@@ -3,6 +3,7 @@
 import sqlite3
 import datetime
 import re
+import hashlib # Usaremos para criar o hash da observação
 from werkzeug.security import generate_password_hash, check_password_hash
 import unicodedata
 import os
@@ -26,21 +27,26 @@ def inicializar_banco():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS processos (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            numero_processo TEXT, 
-            data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
-            data_ultima_atualizacao TIMESTAMP, 
-            responsavel_principal TEXT, 
-            classificacao TEXT,
-            tarefa_id INTEGER UNIQUE,
-            id_responsavel INTEGER
+            numero_processo TEXT, data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+            data_ultima_atualizacao TIMESTAMP, responsavel_principal TEXT, 
+            classificacao TEXT, tarefa_id INTEGER UNIQUE, id_responsavel INTEGER
         )
     ''')
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS subsidios_atuais (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_processo TEXT, item TEXT, status TEXT, data_atualizacao TIMESTAMP, UNIQUE(numero_processo, item))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS itens_relevantes (id INTEGER PRIMARY KEY AUTOINCREMENT, item_nome TEXT UNIQUE)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user')''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS user_item_preferences (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, item_id INTEGER NOT NULL, is_enabled BOOLEAN NOT NULL DEFAULT 1, FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE, FOREIGN KEY (item_id) REFERENCES itens_relevantes (id) ON DELETE CASCADE, UNIQUE(user_id, item_id))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS user_process_view (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, process_id INTEGER NOT NULL, status_visualizacao TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE, FOREIGN KEY (process_id) REFERENCES processos (id) ON DELETE CASCADE, UNIQUE(user_id, process_id))''')
+    
+    # --- NOVA TABELA DE HISTÓRICO ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historico_exportacao (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chave_processo TEXT UNIQUE,
+            data_exportacao TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     if not buscar_usuario_por_nome('admin'):
         adicionar_usuario('admin', 'admin', role='admin')
@@ -55,60 +61,40 @@ def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: 
     agora = datetime.datetime.now()
     numero_limpo = _limpar_numero(numero_processo)
     try:
-        cursor.execute(
-            "INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao, tarefa_id, id_responsavel) VALUES (?, ?, ?, ?, ?)", 
-            (numero_limpo, executante, agora, tarefa_id, id_responsavel)
-        )
+        cursor.execute( "INSERT INTO processos (numero_processo, responsavel_principal, data_ultima_atualizacao, tarefa_id, id_responsavel) VALUES (?, ?, ?, ?, ?)", (numero_limpo, executante, agora, tarefa_id, id_responsavel) )
         process_id = cursor.lastrowid
         if process_id and user_id:
             cursor.execute( "INSERT INTO user_process_view (user_id, process_id, status_visualizacao) VALUES (?, ?, 'monitorando')", (user_id, process_id) )
         conn.commit()
         return process_id
     except sqlite3.IntegrityError:
-        print(f"Tarefa ID {tarefa_id} já existe no banco. Ignorando.")
         return None
     except Exception as e:
-        print(f"Erro em adicionar_processo_unitario: {e}")
         conn.rollback()
         return None
     finally:
         conn.close()
 
-# --- FUNÇÃO DE EXPORTAÇÃO MODIFICADA ---
+# --- FUNÇÃO DE EXPORTAÇÃO TOTALMENTE REFEITA ---
 def exportar_dados_json():
-    """
-    Exporta os dados, mas apenas para processos que contenham PELO MENOS UM subsídio 'Concluído'.
-    """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     processos_agrupados = {}
     
-    # 1. Busca os processos que estão em monitoramento
+    # 1. Busca processos que têm PELO MENOS UM subsídio concluído
     cursor.execute("""
-        SELECT p.id, p.numero_processo, p.id_responsavel
-        FROM processos p 
-        JOIN user_process_view v ON p.id = v.process_id 
-        WHERE v.status_visualizacao = 'monitorando'
+        SELECT DISTINCT p.id, p.numero_processo, p.id_responsavel
+        FROM processos p
+        JOIN subsidios_atuais sa ON p.numero_processo = sa.numero_processo
+        JOIN user_process_view v ON p.id = v.process_id
+        WHERE v.status_visualizacao = 'monitorando' AND (sa.status LIKE 'Concluído' OR sa.status LIKE 'Concluido')
     """)
-    processos_base = cursor.fetchall()
-    
-    processos_para_exportar = []
+    processos_elegiveis = cursor.fetchall()
 
-    # 2. Filtra apenas os processos que têm ao menos um subsídio concluído
-    for processo in processos_base:
-        cursor.execute("""
-            SELECT 1 FROM subsidios_atuais 
-            WHERE numero_processo = ? AND (status LIKE 'Concluído' OR status LIKE 'Concluido')
-            LIMIT 1
-        """, (processo['numero_processo'],))
-        
-        if cursor.fetchone(): # Se encontrou pelo menos um, o processo é elegível
-            processos_para_exportar.append(processo)
-
-    # 3. Agrupa os dados para os processos elegíveis
-    for processo in processos_para_exportar:
+    # 2. Para cada processo elegível, monta a observação completa
+    for processo in processos_elegiveis:
         chave_agrupamento = (processo['numero_processo'], processo['id_responsavel'])
         
         if chave_agrupamento not in processos_agrupados:
@@ -125,19 +111,35 @@ def exportar_dados_json():
             observacao = f"PROATIVO: {subsidio['item']} ({subsidio['status'].upper()})."
             processos_agrupados[chave_agrupamento]["observacoes"].append(observacao)
 
-    conn.close()
-
-    # 4. Monta a lista final
-    lista_de_processos_export = []
+    # 3. Filtra o que já foi exportado e prepara a lista final
+    lista_para_exportar = []
+    lista_para_registrar = []
+    
     for grupo in processos_agrupados.values():
-        observacao_final = " ; ".join(grupo["observacoes"])
-        lista_de_processos_export.append({
-            "numero_processo": grupo["numero_processo"],
-            "id_responsavel": grupo["id_responsavel"],
-            "observacao": observacao_final
-        })
+        # Ordena as observações para garantir que o hash seja sempre o mesmo
+        observacoes_ordenadas = sorted(grupo["observacoes"])
+        observacao_final = " ; ".join(observacoes_ordenadas)
         
-    return lista_de_processos_export
+        # Cria uma "chave única" para este estado do processo
+        chave_processo = f"{grupo['numero_processo']}-{grupo['id_responsavel']}-{hashlib.md5(observacao_final.encode()).hexdigest()}"
+        
+        cursor.execute("SELECT 1 FROM historico_exportacao WHERE chave_processo = ?", (chave_processo,))
+        if not cursor.fetchone():
+            # Se não está no histórico, adiciona para exportar e para registrar
+            lista_para_exportar.append({
+                "numero_processo": grupo["numero_processo"],
+                "id_responsavel": grupo["id_responsavel"],
+                "observacao": observacao_final
+            })
+            lista_para_registrar.append((chave_processo, datetime.datetime.now()))
+
+    # 4. Registra os novos itens exportados no histórico
+    if lista_para_registrar:
+        cursor.executemany("INSERT INTO historico_exportacao (chave_processo, data_exportacao) VALUES (?, ?)", lista_para_registrar)
+        conn.commit()
+
+    conn.close()
+    return lista_para_exportar
 
 # (O restante do arquivo continua o mesmo)
 def adicionar_usuario(username, password, role='user'):
