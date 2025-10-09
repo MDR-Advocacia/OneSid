@@ -3,7 +3,7 @@
 import sqlite3
 import datetime
 import re
-import hashlib # Usaremos para criar o hash da observação
+import hashlib
 from werkzeug.security import generate_password_hash, check_password_hash
 import unicodedata
 import os
@@ -37,8 +37,6 @@ def inicializar_banco():
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user')''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS user_item_preferences (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, item_id INTEGER NOT NULL, is_enabled BOOLEAN NOT NULL DEFAULT 1, FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE, FOREIGN KEY (item_id) REFERENCES itens_relevantes (id) ON DELETE CASCADE, UNIQUE(user_id, item_id))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS user_process_view (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, process_id INTEGER NOT NULL, status_visualizacao TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE, FOREIGN KEY (process_id) REFERENCES processos (id) ON DELETE CASCADE, UNIQUE(user_id, process_id))''')
-    
-    # --- NOVA TABELA DE HISTÓRICO ---
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS historico_exportacao (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +44,6 @@ def inicializar_banco():
             data_exportacao TIMESTAMP
         )
     ''')
-
     conn.commit()
     if not buscar_usuario_por_nome('admin'):
         adicionar_usuario('admin', 'admin', role='admin')
@@ -54,6 +51,39 @@ def inicializar_banco():
         adicionar_usuario("mdr", "mdr.123")
     conn.close()
     print("✔️ Banco de dados (re)inicializado com a estrutura de visualização por usuário.")
+
+# --- NOVA FUNÇÃO ADICIONADA ---
+def filtrar_tarefas_novas(lista_de_tarefas: list) -> list:
+    """
+    Recebe uma lista de tarefas (dicionários) e retorna apenas as que não existem no banco.
+    """
+    if not lista_de_tarefas:
+        return []
+
+    # Extrai todos os IDs da lista de tarefas candidatas
+    tarefa_ids_candidatos = {tarefa['id'] for tarefa in lista_de_tarefas if 'id' in tarefa}
+    if not tarefa_ids_candidatos:
+        return []
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Cria placeholders (?) para a query SQL, ex: (?, ?, ?)
+    placeholders = ','.join('?' for _ in tarefa_ids_candidatos)
+    query = f"SELECT tarefa_id FROM processos WHERE tarefa_id IN ({placeholders})"
+    
+    cursor.execute(query, tuple(tarefa_ids_candidatos))
+    
+    # Cria um conjunto com os IDs que JÁ EXISTEM no banco
+    tarefa_ids_existentes = {row[0] for row in cursor.fetchall()}
+    conn.close()
+
+    # Filtra a lista original, mantendo apenas as tarefas cujo ID NÃO ESTÁ no conjunto de existentes
+    tarefas_filtradas = [tarefa for tarefa in lista_de_tarefas if tarefa['id'] not in tarefa_ids_existentes]
+    
+    print(f"Peneirando tarefas: {len(tarefa_ids_candidatos)} candidatas -> {len(tarefa_ids_existentes)} já existentes -> {len(tarefas_filtradas)} novas para processar.")
+    return tarefas_filtradas
+
 
 def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: str, tarefa_id: int = None, id_responsavel: int = None):
     conn = sqlite3.connect(DB_NAME)
@@ -75,15 +105,11 @@ def adicionar_processo_unitario(user_id: int, numero_processo: str, executante: 
     finally:
         conn.close()
 
-# --- FUNÇÃO DE EXPORTAÇÃO TOTALMENTE REFEITA ---
 def exportar_dados_json():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
     processos_agrupados = {}
-    
-    # 1. Busca processos que têm PELO MENOS UM subsídio concluído
     cursor.execute("""
         SELECT DISTINCT p.id, p.numero_processo, p.id_responsavel
         FROM processos p
@@ -92,52 +118,28 @@ def exportar_dados_json():
         WHERE v.status_visualizacao = 'monitorando' AND (sa.status LIKE 'Concluído' OR sa.status LIKE 'Concluido')
     """)
     processos_elegiveis = cursor.fetchall()
-
-    # 2. Para cada processo elegível, monta a observação completa
     for processo in processos_elegiveis:
         chave_agrupamento = (processo['numero_processo'], processo['id_responsavel'])
-        
         if chave_agrupamento not in processos_agrupados:
-            processos_agrupados[chave_agrupamento] = {
-                "numero_processo": processo['numero_processo'],
-                "id_responsavel": processo['id_responsavel'],
-                "observacoes": []
-            }
-
+            processos_agrupados[chave_agrupamento] = { "numero_processo": processo['numero_processo'], "id_responsavel": processo['id_responsavel'], "observacoes": [] }
         cursor.execute("SELECT item, status FROM subsidios_atuais WHERE numero_processo = ?", (processo['numero_processo'],))
         subsidios = cursor.fetchall()
-        
         for subsidio in subsidios:
             observacao = f"PROATIVO: {subsidio['item']} ({subsidio['status'].upper()})."
             processos_agrupados[chave_agrupamento]["observacoes"].append(observacao)
-
-    # 3. Filtra o que já foi exportado e prepara a lista final
     lista_para_exportar = []
     lista_para_registrar = []
-    
     for grupo in processos_agrupados.values():
-        # Ordena as observações para garantir que o hash seja sempre o mesmo
         observacoes_ordenadas = sorted(grupo["observacoes"])
         observacao_final = " ; ".join(observacoes_ordenadas)
-        
-        # Cria uma "chave única" para este estado do processo
         chave_processo = f"{grupo['numero_processo']}-{grupo['id_responsavel']}-{hashlib.md5(observacao_final.encode()).hexdigest()}"
-        
         cursor.execute("SELECT 1 FROM historico_exportacao WHERE chave_processo = ?", (chave_processo,))
         if not cursor.fetchone():
-            # Se não está no histórico, adiciona para exportar e para registrar
-            lista_para_exportar.append({
-                "numero_processo": grupo["numero_processo"],
-                "id_responsavel": grupo["id_responsavel"],
-                "observacao": observacao_final
-            })
+            lista_para_exportar.append({ "numero_processo": grupo["numero_processo"], "id_responsavel": grupo["id_responsavel"], "observacao": observacao_final })
             lista_para_registrar.append((chave_processo, datetime.datetime.now()))
-
-    # 4. Registra os novos itens exportados no histórico
     if lista_para_registrar:
         cursor.executemany("INSERT INTO historico_exportacao (chave_processo, data_exportacao) VALUES (?, ?)", lista_para_registrar)
         conn.commit()
-
     conn.close()
     return lista_para_exportar
 
