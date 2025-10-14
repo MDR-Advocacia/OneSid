@@ -19,7 +19,13 @@ def tarefa_automatizada_completa():
     """
     Orquestra a execução da importação, exportação e postagem para a API.
     """
-    print(f"\n--- [{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] INICIANDO TAREFA AUTOMATIZADA COMPLETA ---")
+    # NOVO: Checagem de horário para não rodar entre 20h e 8h
+    hora_atual = datetime.now().hour
+    if not (8 <= hora_atual < 20):
+        print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Fora do horário de execução (8h-20h). Pulando esta execução.")
+        return
+
+    print(f"\n--- [{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] INICIANDO TAREFA AUTOMATIZIZADA COMPLETA ---")
 
     # 1. Botão de Importar do Legal One
     print("\n[PASSO 1/3] Executando importação do Legal One...")
@@ -70,7 +76,7 @@ schedule.every(2).hours.do(tarefa_automatizada_completa)
 
 if __name__ == "__main__":
     print("✅ Agendador de Tarefas Automáticas Iniciado.")
-    print("A rotina completa será executada a cada 2 horas.")
+    print("A rotina completa será executada a cada 2 horas, somente entre 8h e 20h.")
     print("Pressione Ctrl+C para encerrar.")
 
     # Executa a tarefa uma vez logo ao iniciar o script para teste imediato
