@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./RPA
+      dockerfile: Dockerfile
+    container_name: onesid-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./rpa_dados.db:/app/rpa_dados.db
+    restart: unless-stopped
+    networks:
+      - onesid-net
+
+  frontend:
+    build:
+      context: ./painel-rpa
+      dockerfile: Dockerfile
+    container_name: onesid-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - onesid-net
+
+networks:
+  onesid-net:
+    driver: bridge
