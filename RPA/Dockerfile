@@ -9,8 +9,12 @@ RUN apt-get update && apt-get install -y curl && \
 # Define o diretório de trabalho no contêiner
 WORKDIR /app
 
+# ADICIONE ESTA LINHA ABAIXO
+# Adiciona o diretório de trabalho ao PYTHONPATH para garantir que os imports funcionem
+ENV PYTHONPATH "${PYTHONPATH}:/app"
+
 # Copia os arquivos de dependências
-COPY requirements.txt .
+COPY RPA/requirements.txt .
 
 # Instala as dependências do Python
 RUN pip install --no-cache-dir -r requirements.txt
@@ -19,7 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install --with-deps
 
 # Copia o restante do código da aplicação
-COPY . .
+COPY RPA/ .
+COPY bd/ ./bd/
 
 # Expõe a porta que a aplicação Flask usa
 EXPOSE 5000

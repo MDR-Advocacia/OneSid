@@ -1,5 +1,3 @@
-// Substitua todo o conteúdo de painel-rpa/src/App.js por este código:
-
 import React, { useState, useEffect } from 'react';
 import {
     fetchPainelData,
@@ -13,6 +11,7 @@ import LoginPage from './LoginPage';
 import './App.css';
 import logo from './assets/logo-onesid.png';
 
+// Componente para o Modal de Detalhes
 const DetailsModal = ({ processo, onClose }) => {
     if (!processo) return null;
     return (
@@ -35,6 +34,7 @@ const DetailsModal = ({ processo, onClose }) => {
     );
 };
 
+// Componente Principal da Aplicação
 function App() {
     const [processos, setProcessos] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +46,9 @@ function App() {
     const [isImporting, setIsImporting] = useState(false);
     const [selectedProcess, setSelectedProcess] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
+    
+    // --- NOVO ESTADO PARA O FILTRO ---
+    const [filter, setFilter] = useState('todos');
 
     const checkAuth = async () => {
         try {
@@ -145,6 +148,19 @@ function App() {
             setIsExporting(false);
         }
     };
+    
+    // --- LÓGICA DE FILTRAGEM ---
+    const filteredProcessos = processos.filter(p => {
+        if (filter === 'monitorando') {
+            // Supondo que o status seja exatamente "Monitorando"
+            return p.status_geral && p.status_geral.toLowerCase() === 'monitorando';
+        }
+        if (filter === 'concluido') {
+            // Supondo que o status seja exatamente "Concluído"
+            return p.status_geral && p.status_geral.toLowerCase() === 'concluído';
+        }
+        return true; // para 'todos'
+    });
 
     if (!user) {
         return <LoginPage onLoginSuccess={handleLoginSuccess} />;
@@ -184,32 +200,39 @@ function App() {
 
                     <div className="process-table-container">
                         <h2>Processos em Monitoramento</h2>
+                        
+                        {/* --- BOTÕES DE FILTRO --- */}
+                        <div className="filter-buttons">
+                            <button onClick={() => setFilter('todos')} className={filter === 'todos' ? 'active' : ''}>Todos</button>
+                            <button onClick={() => setFilter('monitorando')} className={filter === 'monitorando' ? 'active' : ''}>Monitorando</button>
+                            <button onClick={() => setFilter('concluido')} className={filter === 'concluido' ? 'active' : ''}>Concluído</button>
+                        </div>
+
                         {isLoading ? <p>Carregando...</p> : error ? <p className="error">{error}</p> : (
                             <table>
                                 <thead>
                                     <tr>
                                         <th>ID</th>
                                         <th>Número do Processo</th>
-                                        {/* --- MUDANÇA NO TÍTULO DA COLUNA --- */}
                                         <th>ID do Responsável</th>
                                         <th>Status</th>
                                         <th>Última Verificação</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {processos.length > 0 ? (
-                                        processos.map((p) => (
+                                    {/* --- RENDERIZA A LISTA FILTRADA --- */}
+                                    {filteredProcessos.length > 0 ? (
+                                        filteredProcessos.map((p) => (
                                             <tr key={`${p.id}-${p.numero_processo}`}>
                                                 <td>{p.id}</td>
                                                 <td><button className="link-button" onClick={() => setSelectedProcess(p)}>{p.numero_processo}</button></td>
-                                                {/* --- MUDANÇA NO DADO EXIBIDO --- */}
                                                 <td>{p.id_responsavel}</td>
                                                 <td>{p.status_geral}</td>
                                                 <td>{new Date(p.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
                                             </tr>
                                         ))
                                     ) : (
-                                        <tr><td colSpan="5">Nenhum processo em monitoramento.</td></tr>
+                                        <tr><td colSpan="5">Nenhum processo encontrado para o filtro selecionado.</td></tr>
                                     )}
                                 </tbody>
                             </table>
