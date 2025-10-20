@@ -96,7 +96,7 @@ def exportar_dados_json():
         SELECT DISTINCT p.id, p.numero_processo, p.id_responsavel FROM processos p
         JOIN subsidios_atuais sa ON p.numero_processo = sa.numero_processo
         JOIN user_process_view v ON p.id = v.process_id
-        WHERE v.status_visualizacao IN ('monitorando', 'Concluído') AND (sa.status LIKE 'Concluído' OR sa.status LIKE 'Concluido')
+        WHERE v.status_visualizacao IN ('monitorando', 'Concluído') AND (sa.status LIKE 'Concluído' OR sa.status LIKE 'Concluido' OR sa.status LIKE 'Excluído')
     """)
     processos_elegiveis = cursor.fetchall()
     # ... (o resto da função continua igual)
@@ -146,7 +146,13 @@ def buscar_usuario_por_nome(username):
     return dict(user) if user else None
 
 def _verificar_e_atualizar_status_geral(cursor, numero_processo_limpo):
-    cursor.execute("SELECT COUNT(id) FROM subsidios_atuais WHERE numero_processo = ? AND status NOT LIKE 'Concluído' AND status NOT LIKE 'Concluido'", (numero_processo_limpo,))
+    cursor.execute("""
+        SELECT COUNT(id) FROM subsidios_atuais 
+        WHERE numero_processo = ? 
+        AND status NOT LIKE 'Concluído' 
+        AND status NOT LIKE 'Concluido'
+        AND status NOT LIKE 'Excluído'
+    """, (numero_processo_limpo,))
     count_nao_concluidos = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(id) FROM subsidios_atuais WHERE numero_processo = ?", (numero_processo_limpo,))
     count_total = cursor.fetchone()[0]
