@@ -11,7 +11,7 @@ sys.path.append(caminho_raiz_do_projeto)
 # -----------------------------------------------------------
 
 from bd import database
-from RPA import main as rpa_main
+import main as rpa_main
 
 def executar_tarefa_monitoramento():
     """

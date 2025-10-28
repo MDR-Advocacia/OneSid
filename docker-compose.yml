@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./painel-rpa
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./painel-rpa:/app
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ./RPA
+      dockerfile: Dockerfile
+    command: python server.py
+    ports:
+      - "5000:5000" # Lembre-se de ajustar essa porta se necessário
+    volumes:
+      - ./RPA:/app     # Mapeia a pasta RPA para /app
+      - ./bd:/app/bd   # <-- ADICIONE ESTA LINHA
+    restart: unless-stopped
+    
+
+  scheduler:
+    build:
+      context: ./RPA
+      dockerfile: Dockerfile
+    command: python scheduler.py
+    volumes:
+      - ./RPA:/app     # Mapeia a pasta RPA para /app
+      - ./bd:/app/bd   # <-- ADICIONE ESTA LINHA TAMBÉM
+    restart: unless-stopped

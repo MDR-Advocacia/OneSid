@@ -1,7 +1,10 @@
 import sys
 import os
 from playwright.sync_api import sync_playwright
-from RPA import navegador, portal_bb, processo, config
+import navegador
+import portal_bb
+import processo
+import config
 from bd import database
 
 caminho_atual = os.path.dirname(os.path.abspath(__file__))
