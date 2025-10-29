@@ -13,3 +13,5 @@ playwright
 python-dotenv
 
 schedule
+
+requests

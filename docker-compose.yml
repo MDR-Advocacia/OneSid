@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-
 
   frontend:
     build:
@@ -9,9 +6,27 @@ services:
       dockerfile: Dockerfile
     container_name: onesid-frontend
     ports:
-      - "3001:80"
+      - "3000:80"
     depends_on:
       - backend
+    restart: unless-stopped
+    networks:
+      - onesid-net
+
+  backend:
+    build:
+      context: ./RPA           
+      dockerfile: Dockerfile   
+    command: python server.py  
+    container_name: onesid-backend
+    env_file:                  
+      - .env                   
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./RPA:/app           
+      - ./bd:/app/bd         
+      - ./rpa_dados.db:/app/rpa_dados.db
     restart: unless-stopped
     networks:
       - onesid-net

@@ -12,3 +12,7 @@ database (1).db
 bd/__pycache__/
 
 logs/rpa_execution.log
+
+logs/rpa_execution.log
+logs/rpa_execution.log
+logs/rpa_execution.log.1
