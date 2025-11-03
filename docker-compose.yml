@@ -3,7 +3,9 @@ services:
   frontend:
     build:
       context: ./painel-rpa
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile     
+      args:
+        - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL}      
     container_name: onesid-frontend
     ports:
       - "3000:80"
@@ -15,17 +17,17 @@ services:
 
   backend:
     build:
-      context: ./RPA           
-      dockerfile: Dockerfile   
-    command: python server.py  
+      context: ./RPA
+      dockerfile: Dockerfile
+    command: python server.py
     container_name: onesid-backend
-    env_file:                  
-      - .env                   
+    env_file:
+      - .env
     ports:
       - "5000:5000"
     volumes:
-      - ./RPA:/app           
-      - ./bd:/app/bd         
+      - ./RPA:/app
+      - ./bd:/app/bd
       - ./rpa_dados.db:/app/rpa_dados.db
     restart: unless-stopped
     networks:

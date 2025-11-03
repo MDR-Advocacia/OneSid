@@ -1,8 +1,9 @@
 # RPA/api_client.py
 import requests
 import json
+from RPA import config
 
-def post_to_api(data, url="http://192.168.0.72:8000/api/v1/tasks/batch-create"):
+def post_to_api(data, url=config.API_TASKS_BATCH_URL):
     """
     Posts the given data as JSON to the specified URL.
     """

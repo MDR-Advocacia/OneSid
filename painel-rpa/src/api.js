@@ -1,6 +1,6 @@
 // Substitua todo o conteúdo de painel-rpa/src/api.js por este código:
 
-const API_BASE_URL = 'http://192.168.0.72:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 // Função auxiliar para lidar com as respostas da API
 async function handleResponse(response) {

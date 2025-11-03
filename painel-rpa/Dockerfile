@@ -1,30 +1,27 @@
 # Estágio 1: Build da aplicação React
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
-# Define o diretório de trabalho
 WORKDIR /app
 
-# Copia os arquivos de manifesto do projeto
 COPY package.json ./
 COPY package-lock.json ./
-
-# Instala as dependências
 RUN npm install
 
-# Copia o restante dos arquivos do projeto
 COPY . .
 
-# Builda a aplicação para produção
+ARG REACT_APP_API_BASE_URL
+
+ENV REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL}
+
 RUN npm run build
 
-# Estágio 2: Servir a aplicação com Nginx
-FROM nginx:stable-alpine
 
-# Copia os arquivos de build do estágio anterior para o diretório padrão do Nginx
+FROM nginx:1.25-alpine
+
+
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Expõe a porta 80
-EXPOSE 80
 
-# Comando para iniciar o Nginx
+
+EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
