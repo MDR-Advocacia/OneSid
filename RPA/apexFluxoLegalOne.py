@@ -47,9 +47,9 @@ def get_all_tasks_candidates():
     all_tasks = []
     tipos_de_tarefa = [
         "(typeId eq 26 and subTypeId eq 1131)",
-        "(typeId eq 18 and subTypeId eq 961)",
-        "(typeId eq 18 and subTypeId eq 936)",
-        "(typeId eq 18 and subTypeId eq 984)"
+        "(typeId eq 28 and subTypeId eq 961)",
+        "(typeId eq 28 and subTypeId eq 936)",
+        "(typeId eq 28 and subTypeId eq 984)"
     ]
 
     for tipo in tipos_de_tarefa:

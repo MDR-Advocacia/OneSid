@@ -78,3 +78,21 @@ export async function exportToJson() {
     }
     return response.json(); // Retorna os dados JSON
 }
+
+export async function deleteProcess(processId) {
+    const response = await fetch(`${API_BASE_URL}/delete-process/${processId}`, {
+        method: 'DELETE',
+        credentials: 'include', // <-- MUDANÇA IMPORTANTE
+    });
+    return handleResponse(response);
+}
+
+export async function archiveProcess(numero_processo) {
+    const response = await fetch(`${API_BASE_URL}/marcar-ciencia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_processo }), // Envia o número do processo
+        credentials: 'include',
+    });
+    return handleResponse(response);
+}

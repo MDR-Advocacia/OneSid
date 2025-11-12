@@ -142,5 +142,23 @@ def marcar_ciencia():
     database.marcar_ciencia_global(numero_processo)
     return jsonify({"message": "Processo arquivado com sucesso para todos os usuários."}), 200
 
+@app.route('/api/delete-process/<int:process_id>', methods=['DELETE'])
+def delete_process(process_id):
+    # 1. Verifica se o usuário está logado
+    if 'user_id' not in session:
+        return jsonify({"message": "Acesso não autorizado"}), 401
+    
+    # 2. Verifica se o usuário é admin
+    if session.get('role') != 'admin':
+        return jsonify({"message": "Acesso restrito a administradores"}), 403
+        
+    try:
+        if database.excluir_processo_por_id(process_id):
+            return jsonify({"message": "Processo excluído com sucesso."}), 200
+        else:
+            return jsonify({"message": "Não foi possível excluir o processo."}), 500
+    except Exception as e:
+        return jsonify({"message": f"Erro interno: {e}"}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

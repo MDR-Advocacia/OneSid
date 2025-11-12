@@ -269,5 +269,45 @@ def atualizar_preferencia_usuario(user_id: int, item_id: int, is_enabled: bool):
     conn.commit()
     conn.close()
 
+def excluir_processo_por_id(process_id: int):
+    """
+    Exclui um processo do banco de dados e suas associações.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    numero_processo_para_limpar = None
+    
+    try:
+        # 1. Descobrir o numero_processo antes de deletar
+        cursor.execute("SELECT numero_processo FROM processos WHERE id = ?", (process_id,))
+        resultado = cursor.fetchone()
+        
+        if resultado:
+            numero_processo_para_limpar = resultado[0]
+            
+            # 2. Excluir da tabela de visualização
+            cursor.execute("DELETE FROM user_process_view WHERE process_id = ?", (process_id,))
+            
+            # 3. Excluir da tabela principal de processos
+            cursor.execute("DELETE FROM processos WHERE id = ?", (process_id,))
+            
+            # 4. (Opcional, mas recomendado) Verificar se mais algum processo usa este número
+            cursor.execute("SELECT COUNT(*) FROM processos WHERE numero_processo = ?", (numero_processo_para_limpar,))
+            contagem = cursor.fetchone()[0]
+            
+            # 5. Se nenhum outro processo usa, limpa os subsídios
+            if contagem == 0:
+                cursor.execute("DELETE FROM subsidios_atuais WHERE numero_processo = ?", (numero_processo_para_limpar,))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao excluir processo {process_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     inicializar_banco()

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     fetchPainelData,
     addSingleProcess,
     checkLoginStatus,
     logout,
     importFromLegalOne,
-    exportToJson
+    exportToJson,
+    deleteProcess,
+    archiveProcess
 } from './api';
 import LoginPage from './LoginPage';
 import './App.css';
@@ -46,9 +48,11 @@ function App() {
     const [isImporting, setIsImporting] = useState(false);
     const [selectedProcess, setSelectedProcess] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
-    
-    // --- NOVO ESTADO PARA O FILTRO ---
+
     const [filter, setFilter] = useState('todos');
+
+    // 2. Estado para a ordenação
+    const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'ascending' });
 
     const checkAuth = async () => {
         try {
@@ -88,6 +92,20 @@ function App() {
         loadPainelData();
     };
 
+    const handleArchiveProcess = async (numeroProcesso, processId) => {
+        if (!window.confirm(`Tem certeza que deseja ARQUIVAR o processo ${numeroProcesso} (ID: ${processId})?\n\nEle sairá do monitoramento ativo.`)) {
+            return;
+        }
+
+        setMessage('Arquivando processo...');
+        try {
+            const response = await archiveProcess(numeroProcesso);
+            setMessage(response.message);
+            loadPainelData();
+        } catch (error) {
+            setMessage(error.message || 'Erro ao arquivar processo.');
+        }
+    };
     const handleLogout = async () => {
         await logout();
         setUser(null);
@@ -109,6 +127,27 @@ function App() {
             loadPainelData();
         } catch (error) {
             setMessage(error.message || 'Erro ao adicionar processo.');
+        }
+    };
+
+    // 3. Função para lidar com a exclusão
+    const handleDeleteProcess = async (processId, processoNumero) => {
+        if (!window.confirm(`Tem certeza que deseja excluir o processo ${processoNumero} (ID: ${processId})?\n\nEsta ação não pode ser desfeita.`)) {
+            return;
+        }
+
+        setMessage('Excluindo processo...');
+        try {
+            const response = await deleteProcess(processId);
+            setMessage(response.message);
+            loadPainelData(); // Recarrega a lista de processos
+        } catch (error) {
+            // No back-end, 403 (Forbidden) é o erro de não ser admin
+            if (error.message.includes('403')) {
+                setMessage('Erro: Apenas administradores podem excluir processos.');
+            } else {
+                setMessage(error.message || 'Erro ao excluir processo.');
+            }
         }
     };
 
@@ -148,19 +187,49 @@ function App() {
             setIsExporting(false);
         }
     };
-    
-    // --- LÓGICA DE FILTRAGEM ---
-    const filteredProcessos = processos.filter(p => {
-        if (filter === 'monitorando') {
-            // Supondo que o status seja exatamente "Monitorando"
-            return p.status_geral && p.status_geral.toLowerCase() === 'monitorando';
+
+    // 4. Função para requisitar a ordenação
+    const requestSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
         }
-        if (filter === 'concluido') {
-            // Supondo que o status seja exatamente "Concluído"
-            return p.status_geral && p.status_geral.toLowerCase() === 'concluído';
+        setSortConfig({ key, direction });
+    };
+
+    // 5. Lógica de filtragem E ordenação com useMemo
+    const processedProcessos = useMemo(() => {
+        let dataToProcess = [...processos];
+
+        // 1. Filtragem
+        const filteredData = dataToProcess.filter(p => {
+            if (filter === 'monitorando') {
+                return p.status_geral && p.status_geral.toLowerCase() === 'monitorando';
+            }
+            if (filter === 'concluido') {
+                return p.status_geral && p.status_geral.toLowerCase() === 'concluído';
+            }
+            return true; // para 'todos'
+        });
+
+        // 2. Ordenação
+        if (sortConfig.key === 'id') {
+            filteredData.sort((a, b) => {
+                const valA = a.id || 0;
+                const valB = b.id || 0;
+
+                if (valA < valB) {
+                    return sortConfig.direction === 'ascending' ? -1 : 1;
+                }
+                if (valA > valB) {
+                    return sortConfig.direction === 'ascending' ? 1 : -1;
+                }
+                return 0;
+            });
         }
-        return true; // para 'todos'
-    });
+
+        return filteredData;
+    }, [processos, filter, sortConfig]); // Dependências
 
     if (!user) {
         return <LoginPage onLoginSuccess={handleLoginSuccess} />;
@@ -177,7 +246,7 @@ function App() {
                         <button onClick={handleLogout} className="logout-button">Sair</button>
                     </div>
                 </header>
-                
+
                 <main>
                     <div className="actions-container">
                         <div className="form-container card">
@@ -200,8 +269,7 @@ function App() {
 
                     <div className="process-table-container">
                         <h2>Processos em Monitoramento</h2>
-                        
-                        {/* --- BOTÕES DE FILTRO --- */}
+
                         <div className="filter-buttons">
                             <button onClick={() => setFilter('todos')} className={filter === 'todos' ? 'active' : ''}>Todos</button>
                             <button onClick={() => setFilter('monitorando')} className={filter === 'monitorando' ? 'active' : ''}>Monitorando</button>
@@ -212,27 +280,54 @@ function App() {
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>ID</th>
+                                        {/* 6. Cabeçalho de ID clicável */}
+                                        <th
+                                            onClick={() => requestSort('id')}
+                                            className="sortable-header"
+                                        >
+                                            ID
+                                            {sortConfig.key === 'id' ?
+                                                (sortConfig.direction === 'ascending' ? ' ▲' : ' ▼') :
+                                                ' ↕'
+                                            }
+                                        </th>
                                         <th>Número do Processo</th>
                                         <th>ID do Responsável</th>
                                         <th>Status</th>
                                         <th>Última Verificação</th>
+                                        <th>Ações</th> {/* 7. Cabeçalho de Ações */}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* --- RENDERIZA A LISTA FILTRADA --- */}
-                                    {filteredProcessos.length > 0 ? (
-                                        filteredProcessos.map((p) => (
+                                    {/* 8. Renderiza a lista processada */}
+                                    {processedProcessos.length > 0 ? (
+                                        processedProcessos.map((p) => (
                                             <tr key={`${p.id}-${p.numero_processo}`}>
                                                 <td>{p.id}</td>
                                                 <td><button className="link-button" onClick={() => setSelectedProcess(p)}>{p.numero_processo}</button></td>
                                                 <td>{p.id_responsavel}</td>
                                                 <td>{p.status_geral}</td>
                                                 <td>{new Date(p.data_ultima_atualizacao).toLocaleString('pt-BR')}</td>
+                                                {/* 9. Célula com o botão Excluir */}
+                                                <td>
+                                                    <button
+                                                        className="archive-button"
+                                                        onClick={() => handleArchiveProcess(p.numero_processo, p.id)}
+                                                    >
+                                                        Arquivar
+                                                    </button>
+                                                    <button
+                                                        className="delete-button"
+                                                        onClick={() => handleDeleteProcess(p.id, p.numero_processo)}
+                                                    >
+                                                        Excluir
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))
                                     ) : (
-                                        <tr><td colSpan="5">Nenhum processo encontrado para o filtro selecionado.</td></tr>
+                                        // 10. Colspan atualizado para 6
+                                        <tr><td colSpan="6">Nenhum processo encontrado para o filtro selecionado.</td></tr>
                                     )}
                                 </tbody>
                             </table>
