@@ -15,3 +15,5 @@ python-dotenv
 schedule
 
 requests
+
+python-dotenv

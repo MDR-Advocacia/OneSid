@@ -49,6 +49,7 @@ def get_all_tasks_candidates():
         "(typeId eq 26 and subTypeId eq 1131)",
         "(typeId eq 28 and subTypeId eq 961)",
         "(typeId eq 28 and subTypeId eq 936)",
+        "(typeId eq 15 and subTypeId eq 856)",
         "(typeId eq 28 and subTypeId eq 984)"
     ]
 

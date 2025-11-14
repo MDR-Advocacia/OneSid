@@ -3,6 +3,7 @@ import time
 import sys
 import os
 from datetime import datetime
+import threading  # <--- IMPORTANTE: Importamos o threading
 
 # --- Adiciona o caminho do projeto para encontrar os módulos (só precisa fazer isso UMA VEZ) ---
 caminho_atual = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +19,7 @@ from RPA import main as rpa_main
 
 # ==================================================================
 #           TAREFA 1: IMPORTAÇÃO E POSTAGEM NA API
-#           (Veio do seu 'scheduler_api.py')
+#           (Esta função não muda, apenas seu agendamento)
 # ==================================================================
 def tarefa_automatizada_completa():
     """
@@ -73,7 +74,7 @@ def tarefa_automatizada_completa():
 
 # ==================================================================
 #           TAREFA 2: MONITORAMENTO RPA
-#           (Veio do seu 'scheduler.py')
+#           (Esta função não muda)
 # ==================================================================
 def executar_tarefa_monitoramento():
     """
@@ -99,30 +100,58 @@ def executar_tarefa_monitoramento():
 
 
 # ==================================================================
-#           REGISTRO DE AMBAS AS TAREFAS
+#           NOVO: FUNÇÃO DE LOOP PARA A THREAD DO RPA
 # ==================================================================
-# Tarefa 1: Rodar a cada 2 horas (entre 8h e 20h)
-schedule.every(2).hours.do(tarefa_automatizada_completa)
+def loop_monitoramento_rpa():
+    """
+    Esta função viverá em uma thread separada, executando o RPA em loop.
+    """
+    print("-> [THREAD RPA] Iniciando loop de monitoramento RPA.")
+    while True:
+        try:
+            # 1. Executa a tarefa de monitoramento
+            executar_tarefa_monitoramento()
+        except Exception as e:
+            # Captura qualquer erro que a função 'executar_tarefa_monitoramento' não capturou
+            print(f"!!! [{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Erro crítico no loop de monitoramento RPA: {e} !!!")
+        
+        # 2. Pausa de 10 minutos
+        print(f"\n--- [{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] TAREFA RPA: Execução concluída. Aguardando 10 minutos antes da próxima... ---")
+        time.sleep(60 * 10) # 60 segundos * 10 minutos
 
-# Tarefa 2: Rodar a cada 50 minutos
-schedule.every(50).minutes.do(executar_tarefa_monitoramento)
+# ==================================================================
+#           REGISTRO DE TAREFAS
+# ==================================================================
+# Tarefa 1: Rodar a cada 30 minutos (entre 8h e 20h)
+# (A biblioteca 'schedule' rodará na Thread Principal)
+schedule.every(30).minutes.do(tarefa_automatizada_completa)
+
+# Tarefa 2 (RPA) não usa mais o 'schedule'. Ela será iniciada
+# em sua própria thread no bloco main.
 # ==================================================================
 
 
 if __name__ == "__main__":
-    print("✅✅ AGENDADOR UNIFICADO INICIADO ✅✅")
-    print("-> Tarefa 1 (API Legal One) rodará a cada 2 horas (entre 8h e 20h).")
-    print("-> Tarefa 2 (Monitoramento RPA) rodará a cada 50 minutos.")
+    print("✅✅ AGENDADOR UNIFICADO (COM THREADS) INICIADO ✅✅")
+    print(f"-> Tarefa 1 (API Legal One) rodará a cada 30 MINUTOS (entre 8h e 20h).")
+    print(f"-> Tarefa 2 (Monitoramento RPA) rodará em loop contínuo (executa, espera 10 MINUTOS, executa de novo).")
     print("Pressione Ctrl+C para encerrar.")
     
-    # Executa ambas as tarefas uma vez logo ao iniciar para teste
-    print("\n[INICIALIZAÇÃO] Executando ambas as tarefas pela primeira vez...")
-    executar_tarefa_monitoramento()
+    # 1. Criar a thread para o loop do RPA
+    # daemon=True garante que a thread feche se o script principal for encerrado
+    thread_rpa = threading.Thread(target=loop_monitoramento_rpa, daemon=True)
+    
+    # 2. Iniciar a thread do RPA
+    # Ela começará a rodar imediatamente em segundo plano
+    thread_rpa.start()
+    
+    # 3. Executa a TAREFA API uma vez logo ao iniciar para teste
+    print("\n[INICIALIZAÇÃO] Executando Tarefa API (1) pela primeira vez...")
     tarefa_automatizada_completa()
     print("\n[INICIALIZAÇÃO] Primeira execução concluída. Entrando no loop de agendamento...")
 
+    # 4. O loop principal (Main Thread) agora só se preocupa
+    #    em verificar o agendamento da TAREFA 1 (API).
     while True:
-        # Verifica se há alguma tarefa agendada para ser executada
         schedule.run_pending()
-        # Espera 60 segundos antes de verificar novamente
-        time.sleep(60)
+        time.sleep(60) # Verifica a cada minuto se é hora de rodar a TAREFA 1

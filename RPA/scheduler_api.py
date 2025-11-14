@@ -1,4 +1,8 @@
 # RPA/scheduler.py
+# RPA/scheduler.py
+# RPA/scheduler.py
+# RPA/scheduler.py
+
 import schedule
 import time
 import sys
@@ -70,7 +74,10 @@ def tarefa_automatizada_completa():
 #               CONFIGURE O AGENDAMENTO AQUI
 # ==================================================================
 # Rodar a cada 2 horas, como solicitado.
-schedule.every(2).hours.do(tarefa_automatizada_completa)
+#schedule.every(2).hours.do(tarefa_automatizada_completa)
+
+# Novo agendamento (a cada 30 minutos):
+schedule.every(30).minutes.do(tarefa_automatizada_completa)
 # ==================================================================
 
 
@@ -84,4 +91,4 @@ if __name__ == "__main__":
 
     while True:
         schedule.run_pending()
-        time.sleep(60)
+        time.sleep(30)
